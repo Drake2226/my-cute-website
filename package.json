@@ -1,0 +1,50 @@
+{
+  "name": "cute-website",
+  "version": "0.0.1",
+  "description": "A little pink retro console that asks one very important question.",
+  "productName": "A date with you",
+  "author": "Drake2209 <drake.carcellar16@gmail.com>",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "prettier --write \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore && eslint --fix -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
+    "lint:check": "prettier \"**/*.{js,vue,css,scss,html,md,json}\" --ignore-path .gitignore && eslint -c ./eslint.config.js \"./src*/**/*.{js,cjs,mjs,vue}\"",
+    "dev": "quasar dev",
+    "build": "quasar build",
+    "postinstall": "quasar prepare --silent"
+  },
+  "dependencies": {
+    "@emailjs/browser": "^4.4.1",
+    "@quasar/extras": "^2.0.4",
+    "pinia": "^4.0.2",
+    "quasar": "^2.27.0",
+    "vue": "^3.5.22",
+    "vue-router": "^5.0.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@quasar/app-vite": "^3.8.1",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "autoprefixer": "^10.4.27",
+    "eslint": "^10.8.0",
+    "eslint-plugin-vue": "^10.8.0",
+    "globals": "^17.4.0",
+    "postcss": "^8.5.8",
+    "prettier": "^3.8.1",
+    "sass": "^1.103.1",
+    "vite-plugin-checker": "^0.14.5",
+    "vue-eslint-parser": "^10.4.0"
+  },
+  "keywords": [
+    "quasar",
+    "quasar-app",
+    "quasar-cli",
+    "quasar-app-vite",
+    "vite",
+    "vue",
+    "vuejs"
+  ],
+  "engines": {
+    "node": ">= 26 || ^24 || ^22.12"
+  }
+}

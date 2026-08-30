@@ -1,0 +1,465 @@
+// ---------------------------------------------------------------------------
+// LOVE-MACHINE 3000 — a pink retro handheld console that asks one question.
+// Tokens first, then the console shell, then the shared retro UI parts.
+// ---------------------------------------------------------------------------
+
+:root {
+  // Palette
+  --bubblegum: #ff5fa2; // primary action pink
+  --cotton: #ffc2dd; // console plastic
+  --blush: #ffe3ef; // room behind the console
+  --cream: #fff6ea; // the screen itself
+  --plum: #4a2b3d; // outlines + all text (warmer than black)
+  --mint: #7bd8c4; // cool accent, keeps it off monochrome
+  --butter: #ffd97d; // sparks, stars, confetti
+
+  // Type
+  --font-display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
+  --font-hud: 'Press Start 2P', 'Courier New', monospace;
+  --font-body: 'Courier Prime', 'Courier New', monospace;
+
+  // Retro hard-edged shading
+  --ink: 3px solid var(--plum);
+  --drop: 6px 6px 0 rgba(74, 43, 61, 0.28);
+  --press: 0 5px 0 var(--plum);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#q-app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--plum);
+  background-color: var(--blush);
+  // Retro polka dots: two offset grids so it reads as a printed pattern.
+  background-image:
+    radial-gradient(circle, rgba(255, 194, 221, 0.9) 3px, transparent 3.5px),
+    radial-gradient(circle, rgba(255, 217, 125, 0.55) 2px, transparent 2.5px);
+  background-size:
+    38px 38px,
+    38px 38px;
+  background-position:
+    0 0,
+    19px 19px;
+  -webkit-font-smoothing: antialiased;
+}
+
+// ---------------------------------------------------------------------------
+// The console shell
+// ---------------------------------------------------------------------------
+
+.cabinet {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 14px;
+}
+
+.console {
+  position: relative;
+  width: min(460px, 100%);
+  padding: 16px 16px 14px;
+  border: var(--ink);
+  border-radius: 30px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0) 42%), var(--cotton);
+  box-shadow:
+    var(--drop),
+    inset 0 -6px 0 rgba(74, 43, 61, 0.1);
+}
+
+// Four screws, because it is a real machine.
+.console__screw {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--plum);
+  border-radius: 50%;
+  background: var(--blush);
+
+  &--tl {
+    top: 9px;
+    left: 9px;
+  }
+  &--tr {
+    top: 9px;
+    right: 9px;
+  }
+  &--bl {
+    bottom: 9px;
+    left: 9px;
+  }
+  &--br {
+    bottom: 9px;
+    right: 9px;
+  }
+}
+
+.console__plate {
+  font-family: var(--font-hud);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--plum);
+  opacity: 0.75;
+  margin: 2px 0 10px;
+}
+
+.console__deck {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.console__hole {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(74, 43, 61, 0.35);
+}
+
+// ---------------------------------------------------------------------------
+// The screen
+// ---------------------------------------------------------------------------
+
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: min(600px, calc(100dvh - 150px));
+  min-height: 430px;
+  border: var(--ink);
+  border-radius: 18px;
+  background: var(--cream);
+  overflow: hidden;
+  box-shadow: inset 0 0 26px rgba(74, 43, 61, 0.16);
+}
+
+.screen__glass {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background:
+    repeating-linear-gradient(to bottom, rgba(74, 43, 61, 0.05) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(74, 43, 61, 0.16) 100%);
+}
+
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 2px dashed rgba(74, 43, 61, 0.3);
+  font-family: var(--font-hud);
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  color: var(--plum);
+  background: rgba(255, 194, 221, 0.35);
+  flex: none;
+}
+
+.hud__pips {
+  display: flex;
+  gap: 4px;
+}
+
+.hud__pip {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--plum);
+  background: transparent;
+  transition: background-color 0.25s ease;
+
+  &--on {
+    background: var(--bubblegum);
+  }
+}
+
+// Every level fills the screen and cross-fades with the next one.
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 16px 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.warp-enter-active,
+.warp-leave-active {
+  transition:
+    opacity 0.34s ease,
+    transform 0.34s cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.warp-enter-from {
+  opacity: 0;
+  transform: translateX(26px) scale(0.97);
+}
+.warp-leave-to {
+  opacity: 0;
+  transform: translateX(-22px) scale(0.97);
+}
+
+// ---------------------------------------------------------------------------
+// Type
+// ---------------------------------------------------------------------------
+
+.eyebrow {
+  font-family: var(--font-hud);
+  font-size: 7.5px;
+  letter-spacing: 0.16em;
+  color: var(--bubblegum);
+  text-align: center;
+}
+
+.headline {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1.6rem, 7.4vw, 2.15rem);
+  line-height: 1.08;
+  text-align: center;
+  color: var(--plum);
+  margin: 10px 0 0;
+  text-shadow: 2px 2px 0 var(--cotton);
+}
+
+.subline {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(74, 43, 61, 0.75);
+  margin: 8px 0 0;
+}
+
+// ---------------------------------------------------------------------------
+// Buttons
+// ---------------------------------------------------------------------------
+
+.btn {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 13px 26px;
+  border: var(--ink);
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--plum);
+  cursor: pointer;
+  box-shadow: var(--press);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background-color 0.2s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 7px 0 var(--plum);
+  }
+
+  &:active {
+    transform: translateY(5px);
+    box-shadow: 0 0 0 var(--plum);
+  }
+
+  &:focus-visible {
+    outline: 3px solid var(--mint);
+    outline-offset: 3px;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  &--yes {
+    background: var(--bubblegum);
+    color: var(--cream);
+  }
+
+  &--mint {
+    background: var(--mint);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ambient hearts, drifting up behind everything on the screen
+// ---------------------------------------------------------------------------
+
+.drift {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.drift__heart {
+  position: absolute;
+  bottom: -40px;
+  font-size: 18px;
+  opacity: 0;
+  animation-name: drift-up;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes drift-up {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.75;
+  }
+  88% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-105vh) rotate(28deg);
+    opacity: 0;
+  }
+}
+
+.blink {
+  animation: blink 1.05s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quasar QDate, dressed for the console
+// ---------------------------------------------------------------------------
+
+.retro-cal.q-date {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-shadow: none;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-body);
+  color: var(--plum);
+
+  .q-date__view {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .q-date__navigation {
+    height: 34px;
+
+    .q-btn {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--plum);
+    }
+  }
+
+  .q-date__calendar-weekdays > div {
+    font-family: var(--font-hud);
+    font-size: 6.5px;
+    letter-spacing: 0.04em;
+    opacity: 1;
+    color: rgba(74, 43, 61, 0.55);
+  }
+
+  .q-date__calendar-item .q-btn {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--plum);
+  }
+
+  // QDate marks days rejected by :options as --out. Keep them faintly visible so
+  // the month still reads as a month instead of a mostly empty grid.
+  .q-date__calendar-item--out {
+    opacity: 0.3;
+  }
+
+  .q-date__today {
+    box-shadow: 0 0 0 2px var(--mint) inset;
+  }
+
+  .bg-primary {
+    background: var(--bubblegum) !important;
+    box-shadow: 0 3px 0 var(--plum);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quiet everything decorative down for people who ask for less motion.
+// ---------------------------------------------------------------------------
+
+@media (prefers-reduced-motion: reduce) {
+  .drift__heart,
+  .blink,
+  .pulse,
+  .confetti__bit,
+  .sparkle {
+    animation: none !important;
+  }
+
+  .drift__heart {
+    opacity: 0.5;
+  }
+
+  .warp-enter-active,
+  .warp-leave-active {
+    transition-duration: 0.12s;
+  }
+
+  .warp-enter-from,
+  .warp-leave-to {
+    transform: none;
+  }
+
+  .btn:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .cabinet {
+    padding: 10px 8px;
+  }
+
+  .console {
+    padding: 12px 11px 10px;
+    border-radius: 24px;
+  }
+
+  .screen {
+    height: calc(100dvh - 118px);
+  }
+}
