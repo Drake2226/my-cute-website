@@ -16,21 +16,52 @@
       <div class="win__ticket">
         <p class="win__ticket-row">{{ dateLabel }}</p>
         <p class="win__ticket-row win__ticket-row--big">{{ icon }} {{ dateType }}</p>
+        <p v-if="place" class="win__ticket-row win__ticket-place">
+          📍 {{ place.name
+          }}<span v-if="place.km !== null"> · {{ formatDistance(place.km) }} away</span>
+        </p>
         <p class="win__ticket-note">it's a date</p>
       </div>
 
       <p class="win__sign">See you soon 🥰</p>
+
+      <p class="win__timer" role="status">BACK TO START IN {{ secondsLeft }}</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { formatDistance } from '@/lib/places.js'
 
 defineProps({
   dateLabel: { type: String, required: true },
   dateType: { type: String, required: true },
   icon: { type: String, default: '💗' },
+  place: { type: Object, default: null },
+})
+
+const emit = defineEmits(['restart'])
+
+// The console resets itself so the next person to pick it up starts at the boot
+// screen instead of somebody else's answer.
+const RESTART_SECONDS = 30
+const secondsLeft = ref(RESTART_SECONDS)
+let ticker = null
+
+onMounted(() => {
+  ticker = setInterval(() => {
+    secondsLeft.value -= 1
+    if (secondsLeft.value <= 0) {
+      clearInterval(ticker)
+      ticker = null
+      emit('restart')
+    }
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (ticker !== null) clearInterval(ticker)
 })
 
 const GLYPHS = ['💗', '💖', '✨', '🌸', '💕', '⭐']
@@ -158,6 +189,12 @@ const confetti = computed(() =>
   color: var(--plum);
 }
 
+.win__ticket-place {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .win__ticket-note {
   margin: 8px 0 0;
   padding-top: 7px;
@@ -173,5 +210,13 @@ const confetti = computed(() =>
   font-size: 0.85rem;
   font-style: italic;
   color: rgba(74, 43, 61, 0.7);
+}
+
+.win__timer {
+  margin: 6px 0 0;
+  font-family: var(--font-hud);
+  font-size: 6.5px;
+  letter-spacing: 0.16em;
+  color: rgba(74, 43, 61, 0.55);
 }
 </style>
