@@ -9,69 +9,41 @@
     </div>
 
     <div class="vibe__grid">
-      <button
-        v-for="option in OPTIONS"
-        :key="option.label"
-        class="tile"
-        :class="{ 'tile--busy': sending === option.label }"
-        :disabled="sending !== null"
-        @click="choose(option)"
-      >
+      <button v-for="option in OPTIONS" :key="option.label" class="tile" @click="choose(option)">
         <span class="tile__icon" aria-hidden="true">{{ option.icon }}</span>
         <span class="tile__label">{{ option.label }}</span>
-        <span v-if="sending === option.label" class="tile__status">SENDING…</span>
       </button>
     </div>
-
-    <p v-if="error" class="vibe__error" role="alert">
-      That did not send. Tap your pick again to try once more.
-    </p>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
 import DriftingHearts from './DriftingHearts.vue'
-import { sendAnswer } from '@/config.js'
 
-const props = defineProps({
+defineProps({
   dateLabel: { type: String, required: true },
-  dateIso: { type: String, required: true },
 })
 
 const emit = defineEmits(['done'])
 
+// `spot` is the category the map level searches for around her. The three with
+// no category are the ones you pick a point for yourself — a picnic spot, a
+// trail, a place worth driving to — so they hand the map a blank pin instead.
 const OPTIONS = [
-  { icon: '🎬', label: 'Movie Night' },
-  { icon: '🍝', label: 'Dinner Date' },
-  { icon: '☕', label: 'Coffee & Chill' },
-  { icon: '🌅', label: 'Sunset Picnic' },
-  { icon: '🎢', label: 'Amusement Park' },
-  { icon: '🎨', label: 'Paint & Sip' },
-  { icon: '🥾', label: 'Nature Walk' },
-  { icon: '🏠', label: 'Cozy Night In' },
+  { icon: '🎬', label: 'Movie Night', spot: 'cinema' },
+  { icon: '🍝', label: 'Dinner Date', spot: 'restaurant' },
+  { icon: '☕', label: 'Coffee & Chill', spot: 'cafe' },
+  { icon: '🌅', label: 'Sunset Picnic', spot: '' },
+  { icon: '🎢', label: 'Amusement Park', spot: 'themepark' },
+  { icon: '🎨', label: 'Paint & Sip', spot: 'art' },
+  { icon: '🥾', label: 'Nature Walk', spot: '' },
+  { icon: '⛪', label: 'Church Date', spot: 'worship' },
+  { icon: '🚗', label: 'Road Trip', spot: '' },
+  { icon: '🏠', label: 'Cozy Night In', spot: 'snacks' },
 ]
 
-const sending = ref(null)
-const error = ref(false)
-
-async function choose(option) {
-  sending.value = option.label
-  error.value = false
-
-  try {
-    await sendAnswer({
-      dateLabel: props.dateLabel,
-      dateIso: props.dateIso,
-      dateType: option.label,
-      dateIcon: option.icon,
-    })
-    emit('done', { dateType: option.label, icon: option.icon })
-  } catch (err) {
-    console.error('[love-machine] Could not send the answer:', err)
-    error.value = true
-    sending.value = null
-  }
+function choose(option) {
+  emit('done', { dateType: option.label, icon: option.icon, category: option.spot })
 }
 </script>
 
@@ -82,8 +54,7 @@ async function choose(option) {
 }
 
 .vibe__head,
-.vibe__grid,
-.vibe__error {
+.vibe__grid {
   position: relative;
   z-index: 1;
 }
@@ -153,11 +124,6 @@ async function choose(option) {
   opacity: 0.45;
 }
 
-.tile--busy {
-  opacity: 1;
-  background: var(--cotton);
-}
-
 .tile__icon {
   font-size: 1.5rem;
   line-height: 1;
@@ -169,20 +135,6 @@ async function choose(option) {
   font-size: 0.86rem;
   line-height: 1.15;
   text-align: center;
-}
-
-.tile__status {
-  font-family: var(--font-hud);
-  font-size: 6px;
-  letter-spacing: 0.1em;
-  color: var(--bubblegum);
-}
-
-.vibe__error {
-  margin: 2px 0 0;
-  font-size: 0.75rem;
-  text-align: center;
-  color: var(--bubblegum);
 }
 
 @media (prefers-reduced-motion: reduce) {
