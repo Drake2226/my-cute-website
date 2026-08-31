@@ -8,6 +8,8 @@
 // Full walkthrough: see "Set up the letter" in README.md
 // ---------------------------------------------------------------------------
 
+import { formatDistance, mapLink } from '@/lib/places.js'
+
 // ===========================================================================
 // 1. YOUR EMAIL ADDRESS — the letter gets delivered here.
 // ===========================================================================
@@ -64,7 +66,7 @@ export function isFormspreeConfigured() {
  * The values the email template fills itself in with. Every {{placeholder}} in
  * email/letter-template.html has a matching key here.
  */
-function letterParams({ dateLabel, dateIso, dateType, dateIcon }) {
+function letterParams({ dateLabel, dateIso, dateType, dateIcon, place }) {
   return {
     to_email: RECIPIENT_EMAIL,
     subject: EMAIL_SUBJECT,
@@ -72,6 +74,13 @@ function letterParams({ dateLabel, dateIso, dateType, dateIcon }) {
     date_iso: dateIso,
     date_type: dateType,
     date_icon: dateIcon,
+    // The spot she pinned on the map. EmailJS leaves a {{placeholder}} blank
+    // when its value is an empty string, so every field is always present.
+    place_name: place?.name ?? '',
+    place_address: place?.address ?? '',
+    place_distance: place && place.km !== null ? `${formatDistance(place.km)} from her` : '',
+    place_coords: place ? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}` : '',
+    place_map_url: place ? mapLink(place) : '',
     love_note: LOVE_NOTE,
     love_note_2: LOVE_NOTE_2,
     closing: CLOSING_LINE,
@@ -101,7 +110,12 @@ export async function sendAnswer(answer) {
       body: JSON.stringify({
         ...params,
         _subject: EMAIL_SUBJECT,
-        message: `She said yes! ${answer.dateType} on ${answer.dateLabel}.`,
+        message: [
+          `She said yes! ${answer.dateType} on ${answer.dateLabel}.`,
+          params.place_name && `Where: ${params.place_name} (${params.place_map_url})`,
+        ]
+          .filter(Boolean)
+          .join(' '),
       }),
     })
 
