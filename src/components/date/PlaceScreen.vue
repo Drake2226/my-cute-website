@@ -61,6 +61,8 @@ const error = ref(false)
 const found = ref(0)
 const located = ref(false)
 const searchFailed = ref(false)
+// True once we have asked for her location and come away with nothing.
+const geoFailed = ref(false)
 // Metres the device is unsure by, or null once she has placed herself by hand.
 const accuracy = ref(null)
 
@@ -81,6 +83,9 @@ const plural = computed(() => CATEGORIES[props.category]?.plural ?? '')
 
 const hint = computed(() => {
   if (busy.value) return 'hold on…'
+  // Saying it plainly beats a hint that reads as if nothing went wrong: she
+  // may have declined the prompt, or it may never have been offered.
+  if (geoFailed.value) return 'Could not get your location. Tap the map to pick the spot.'
   if (!props.category) return 'Tap anywhere on the map to drop our pin.'
   if (found.value) return `Nearest ${plural.value} to you — tap one, or tap anywhere else.`
   // "Nothing found" and "nobody answered" look identical on screen unless we
@@ -384,52 +389,100 @@ async function runSearch({ quiet = false } = {}) {
   }
 }
 
-/**
- * Start locating her, and keep at it.
- *
- * Resolves with the first fix so the map can come up straight away, then stays
- * subscribed: on a phone the opening answer is the coarse one, from wifi and
- * cell towers, and the GPS lock that replaces it can be twenty seconds behind.
- * Every sharper reading after the first moves the dot in place, so the position
- * tightens while she is choosing rather than being frozen at its worst.
- *
- * maximumAge is 0 throughout, so nothing here is a cached fix from wherever she
- * happened to be earlier in the day.
- */
-function startLocating() {
+/** Resolves once the map stops moving, or shortly regardless. */
+function whenStill() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null)
+    if (!map) return resolve()
 
-    let first = true
-    const settle = (value) => {
-      if (!first) return
-      first = false
-      resolve(value)
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      map?.off('moveend', finish)
+      resolve()
     }
 
-    geoWatchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const fix = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy ?? null,
-        }
+    map.once('moveend', finish)
+    setTimeout(finish, 500)
+  })
+}
 
-        if (first) settle(fix)
-        else if (worthTaking(fix)) applyFix(fix)
-      },
+function toFix(pos) {
+  return {
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude,
+    accuracy: pos.coords.accuracy ?? null,
+  }
+}
+
+/** One reading, resolving to null instead of rejecting. */
+function askOnce(options) {
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve(toFix(pos)),
       (err) => {
-        console.warn('[love-machine] No location:', err.message)
-        // A late fix can still arrive and place her, so the watch stays on.
-        settle(null)
+        console.warn(`[love-machine] Location (${err.code}):`, err.message)
+        resolve(null)
       },
-      { enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 },
+      options,
     )
   })
 }
 
+/**
+ * Start locating her, and keep at it.
+ *
+ * getCurrentPosition comes first because Safari can sit on a watchPosition for
+ * a long time before its first callback — long enough to look like the level
+ * never finds her at all. Something on the map beats a perfect answer that
+ * never arrives.
+ *
+ * Then the watch runs anyway: on a phone the opening answer is the coarse one,
+ * from wifi and cell towers, and the GPS lock that replaces it can be twenty
+ * seconds behind. Every sharper reading moves the dot in place, so the position
+ * tightens while she is choosing rather than being frozen at its worst.
+ */
+async function startLocating() {
+  if (!navigator.geolocation) {
+    geoFailed.value = true
+    return null
+  }
+
+  let fix = await askOnce({
+    enableHighAccuracy: true,
+    timeout: FIRST_FIX_TIMEOUT_MS,
+    maximumAge: 0,
+  })
+
+  // Nothing precise. A cached, tower-sized answer still puts her on the map
+  // near enough to drag, which is worth more than an empty one.
+  if (!fix && alive) {
+    fix = await askOnce({ enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 })
+  }
+
+  if (!alive) return fix
+  if (!fix) geoFailed.value = true
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const next = toFix(pos)
+      if (worthTaking(next)) applyFix(next, { center: !currentFix })
+    },
+    (err) => console.warn(`[love-machine] Location watch (${err.code}):`, err.message),
+    { enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 },
+  )
+
+  return fix
+}
+
 onMounted(async () => {
   abort = new AbortController()
+
+  // Before anything is awaited. Safari grants the location prompt off the tap
+  // that opened this level, and awaiting Leaflet first spends that permission
+  // — the prompt never appears and she is simply never found. It also means
+  // the fix and the map library load at the same time instead of in turn.
+  const firstFix = startLocating()
 
   const leaflet = await import('leaflet')
   await import('leaflet/dist/leaflet.css')
@@ -461,10 +514,16 @@ onMounted(async () => {
   sizeWatcher.observe(mapEl.value)
 
   busy.value = 'FINDING YOU'
-  const me = await startLocating()
+  const me = await firstFix
   if (!alive) return
 
-  if (me) applyFix(me, { center: true })
+  if (me) {
+    applyFix(me, { center: true })
+    // Centring is a movement, and Leaflet reads a tap during one as a drag and
+    // throws it away. Hold the veil until the map has stopped, so the first
+    // thing she taps actually lands.
+    await whenStill()
+  }
 
   await runSearch()
   if (alive) busy.value = ''
