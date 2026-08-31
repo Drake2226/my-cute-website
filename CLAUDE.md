@@ -72,6 +72,12 @@ Two details there are load-bearing and easy to undo by accident:
   back to a bare array reintroduces a UI that blames the town for a network outage.
 - `describePoint()` asks Nominatim at `zoom=18`. That is the building/POI level; at 17 or lower
   it answers with the road instead, so tapping a cinema names the street it sits on.
+- **`startLocating()` must be called before the first `await` in `onMounted`.** Safari grants the
+  geolocation prompt off the user gesture that opened the level, and awaiting the dynamic Leaflet
+  import first spends that activation — the prompt never appears and the level simply never finds
+  anyone. It also asks via `getCurrentPosition` before subscribing with `watchPosition`, because
+  Safari can sit on a watch for a long time before its first callback; watch-only looked like a
+  permanent "FINDING YOU" on every Apple device. Both were regressions, so keep the order.
 - The user marker — not the geolocation reading — is the source of truth for every distance.
   `startLocating()` resolves on the first fix so the map appears quickly, then stays subscribed
   via `watchPosition`: on a phone the opening answer is a wifi/cell guess and the GPS lock can be
