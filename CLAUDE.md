@@ -73,10 +73,15 @@ Two details there are load-bearing and easy to undo by accident:
 - `describePoint()` asks Nominatim at `zoom=18`. That is the building/POI level; at 17 or lower
   it answers with the road instead, so tapping a cinema names the street it sits on.
 - The user marker — not the geolocation reading — is the source of truth for every distance.
-  `locate()` watches for up to 8 s and keeps the sharpest fix rather than the first (a phone
-  answers from wifi while the GPS warms up), draws the reported accuracy as a ring, and lets her
-  drag the marker to correct it. `onMeMoved()` then rewrites `km` on the `placeList` objects the
-  marker click handlers close over, so a later tap on a pin reports the corrected distance too.
+  `startLocating()` resolves on the first fix so the map appears quickly, then stays subscribed
+  via `watchPosition`: on a phone the opening answer is a wifi/cell guess and the GPS lock can be
+  20 s behind it, so `applyFix()` keeps taking sharper readings and `remeasure()` rewrites `km`
+  on the `placeList` objects the marker click handlers close over. Dragging the marker sets
+  `manualPosition`, which stops the watch for good — a hand-placed dot must never be overridden.
+- Automatic re-searches triggered by an improved fix pass `{ quiet: true }`: no veil over the
+  map, no refitting the view, and `runSearch()` skips `showPlaces()` entirely when the search
+  failed but pins are already displayed. A background refresh that cannot reach a server must
+  leave the existing results alone rather than blanking a map she is in the middle of using.
 
 **The email template is a contract.** Every `{{placeholder}}` in `email/letter-template.html`
 must have a matching key in `letterParams()` in `src/config.js`. That HTML is pasted by hand
