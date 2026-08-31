@@ -16,6 +16,7 @@
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
     "@quasar/extras": "^2.0.4",
+    "leaflet": "^1.9.4",
     "pinia": "^4.0.2",
     "quasar": "^2.27.0",
     "vue": "^3.5.22",
