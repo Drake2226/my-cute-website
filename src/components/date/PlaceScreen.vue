@@ -108,6 +108,7 @@ let currentFix = null
 let manualPosition = false
 let searchOrigin = null
 let searching = false
+let sizeWatcher = null
 // Bumped on every tap so a slow reverse-geocode cannot overwrite a newer pick.
 let pickSeq = 0
 
@@ -444,8 +445,20 @@ onMounted(async () => {
   }).addTo(map)
 
   map.on('click', (e) => pickPoint(e.latlng))
-  // The console screen finishes laying out a tick after this runs.
-  setTimeout(() => map?.invalidateSize(), 60)
+
+  // Leaflet watches the window, which covers rotating the phone and Safari's
+  // toolbar sliding away. It cannot see the map box changing on its own, and
+  // here it does: the caption appears once she is located, the retry button
+  // appears when a search fails, a long address grows the panel underneath.
+  // Each of those resizes the map with the window untouched, and a Leaflet
+  // that still believes the old size puts tiles and taps in the wrong place.
+  // Observing fires once immediately, which also covers the first layout.
+  // Deferred a frame: resizing mid-tap makes Leaflet read the gesture as a
+  // drag and drop the tap, which showed up as the odd pin that never landed.
+  sizeWatcher = new ResizeObserver(() => {
+    requestAnimationFrame(() => map?.invalidateSize({ debounceMoveend: true }))
+  })
+  sizeWatcher.observe(mapEl.value)
 
   busy.value = 'FINDING YOU'
   const me = await startLocating()
@@ -461,6 +474,7 @@ onBeforeUnmount(() => {
   alive = false
   abort?.abort()
   stopWatching()
+  sizeWatcher?.disconnect()
   map?.remove()
   map = null
 })
