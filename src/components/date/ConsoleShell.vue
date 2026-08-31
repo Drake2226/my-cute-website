@@ -39,6 +39,6 @@
 defineProps({
   level: { type: Number, default: 0 },
   levelLabel: { type: String, default: '' },
-  total: { type: Number, default: 4 },
+  total: { type: Number, default: 5 },
 })
 </script>
