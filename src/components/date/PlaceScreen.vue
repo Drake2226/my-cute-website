@@ -5,7 +5,7 @@
       <h1 class="headline place__headline">{{ icon }} {{ dateType }}</h1>
       <p class="place__hint">{{ hint }}</p>
 
-      <button v-if="searchFailed && !busy" class="place__retry" @click="runSearch">
+      <button v-if="searchFailed && !busy" class="place__retry" @click="runSearch()">
         ↻ SEARCH AGAIN
       </button>
     </div>
@@ -66,9 +66,15 @@ const accuracy = ref(null)
 
 const meLabel = computed(() => {
   if (!located.value) return ''
-  return accuracy.value
-    ? `mint dot = you (±${formatDistance(accuracy.value / 1000)}) · drag to fix`
-    : 'mint dot = you · drag to fix'
+  if (!accuracy.value) return 'mint dot = you · drag to fix'
+
+  const off = formatDistance(accuracy.value / 1000)
+
+  // Past a few hundred metres the phone is guessing from wifi, and on iOS that
+  // usually means Precise Location is off — which no amount of waiting fixes.
+  return accuracy.value > ROUGH_M
+    ? `rough fix (±${off}) · allow precise location, or drag the dot`
+    : `mint dot = you (±${off}) · drag to fix`
 })
 
 const plural = computed(() => CATEGORIES[props.category]?.plural ?? '')
@@ -97,13 +103,24 @@ let accuracyRing = null
 let trail = []
 let abort = null
 let alive = true
-let stopLocating = null
+let geoWatchId = null
+let currentFix = null
+let manualPosition = false
+let searchOrigin = null
+let searching = false
 // Bumped on every tap so a slow reverse-geocode cannot overwrite a newer pick.
 let pickSeq = 0
 
-// How long to let the fix sharpen, and the point past which it is pointless.
-const ACCURACY_WAIT_MS = 8000
+// A cold GPS on a phone can take this long to say anything at all.
+const FIRST_FIX_TIMEOUT_MS = 20000
+// Tight enough that the ring would be smaller than the dot.
 const GOOD_ENOUGH_M = 40
+// Past this, the fix is a guess from wifi and worth complaining about.
+const ROUGH_M = 500
+// A looser reading has to differ by this much before it counts as her moving.
+const MOVED_M = 200
+// And the search is only worth redoing if she turns out to be this far off.
+const RESEARCH_SHIFT_KM = 0.4
 
 function markSelected(el) {
   if (selectedEl) selectedEl.classList.remove('mappin--on')
@@ -164,19 +181,11 @@ function drawLine() {
   }
 }
 
-/**
- * She dragged her own dot. A hand-placed position is better than anything the
- * browser guessed, so the ring of uncertainty goes away and every distance is
- * measured again from the new spot.
- */
-function onMeMoved() {
-  if (accuracyRing) {
-    map.removeLayer(accuracyRing)
-    accuracyRing = null
-  }
-  accuracy.value = null
+/** Every distance on screen, measured again from wherever she is now. */
+function remeasure() {
+  const me = userMarker?.getLatLng()
+  if (!me) return
 
-  const me = userMarker.getLatLng()
   const from = { lat: me.lat, lng: me.lng }
 
   // The markers close over these objects, so updating them in place keeps a
@@ -189,7 +198,101 @@ function onMeMoved() {
   drawLine()
 }
 
-function showPlaces(places) {
+/**
+ * She dragged her own dot. A hand-placed position beats anything the browser
+ * guessed, so the ring goes away, the watch stops fighting her for the marker,
+ * and everything is measured again from the new spot.
+ */
+function onMeMoved() {
+  manualPosition = true
+  stopWatching()
+  clearRing()
+  accuracy.value = null
+  remeasure()
+}
+
+function clearRing() {
+  if (accuracyRing) {
+    map.removeLayer(accuracyRing)
+    accuracyRing = null
+  }
+}
+
+function stopWatching() {
+  if (geoWatchId !== null) {
+    navigator.geolocation.clearWatch(geoWatchId)
+    geoWatchId = null
+  }
+}
+
+/**
+ * Take a reading. Called for the first fix and for every sharper one after it,
+ * because on a phone the first answer comes from wifi and cell towers while the
+ * GPS is still warming up — the good one can be twenty seconds behind it.
+ */
+function applyFix(fix, { center = false } = {}) {
+  if (!alive || !map || manualPosition) return
+
+  const latlng = [fix.lat, fix.lng]
+  located.value = true
+  accuracy.value = fix.accuracy
+  currentFix = fix
+
+  if (!userMarker) {
+    userMarker = L.marker(latlng, {
+      icon: L.divIcon({ className: 'mappin-wrap', html: '<span class="mepin"></span>' }),
+      draggable: true,
+      zIndexOffset: -100,
+    })
+      .addTo(map)
+      .on('dragend', onMeMoved)
+
+    userMarker.getElement()?.setAttribute('title', 'you — drag me if this is not right')
+  } else {
+    userMarker.setLatLng(latlng)
+  }
+
+  // How sure the device is, drawn to scale. A bare dot claims a precision that
+  // a wifi-based fix does not have.
+  clearRing()
+  if (fix.accuracy && fix.accuracy > GOOD_ENOUGH_M) {
+    accuracyRing = L.circle(latlng, {
+      radius: fix.accuracy,
+      color: '#7bd8c4',
+      weight: 2,
+      opacity: 0.75,
+      fillColor: '#7bd8c4',
+      fillOpacity: 0.15,
+      interactive: false,
+    }).addTo(map)
+  }
+
+  // Only ever recentre on the first fix; after that she is reading the map.
+  if (center) map.setView(latlng, fix.accuracy && fix.accuracy < 200 ? 16 : 14)
+
+  remeasure()
+
+  // A fix that lands far from where the search ran makes those results the
+  // wrong ones. Only worth redoing while she has not chosen yet.
+  if (
+    props.category &&
+    searchOrigin &&
+    !picked.value &&
+    !searching &&
+    distanceKm(searchOrigin, fix) > RESEARCH_SHIFT_KM
+  ) {
+    runSearch({ quiet: true })
+  }
+}
+
+/** Accept a sharper reading, or a looser one only if she has plainly moved. */
+function worthTaking(fix) {
+  if (!currentFix) return true
+  if ((fix.accuracy ?? Infinity) <= (currentFix.accuracy ?? Infinity)) return true
+  return distanceKm(currentFix, fix) * 1000 > MOVED_M
+}
+
+function showPlaces(places, { refit = true } = {}) {
   found.value = places.length
 
   // A retry starts from a clean map.
@@ -211,7 +314,7 @@ function showPlaces(places) {
     placePins.push(marker)
   })
 
-  if (places.length) {
+  if (places.length && refit) {
     const points = places.slice(0, 6).map((p) => [p.lat, p.lng])
     const me = userMarker?.getLatLng()
     if (me) points.push([me.lat, me.lng])
@@ -241,14 +344,22 @@ async function pickPoint(latlng) {
   }
 }
 
-// Kept callable so the retry button can run it again without reloading Leaflet
-// or asking for her location a second time.
-async function runSearch() {
+/**
+ * Kept callable so the retry button, and a fix that turns out to be far from
+ * where we searched, can run it again without reloading Leaflet or asking for
+ * her location a second time.
+ *
+ * `quiet` is for those automatic refreshes: no veil over the map and no
+ * refitting the view, because she is mid-choice and did not ask for either.
+ */
+async function runSearch({ quiet = false } = {}) {
   const me = userMarker?.getLatLng()
-  if (!props.category || !me) return
+  if (!props.category || !me || searching) return
 
-  busy.value = `LOOKING FOR ${plural.value.toUpperCase()}`
+  searching = true
+  if (!quiet) busy.value = `LOOKING FOR ${plural.value.toUpperCase()}`
   searchFailed.value = false
+  searchOrigin = { lat: me.lat, lng: me.lng }
 
   try {
     const { places, ok } = await findNearby(
@@ -257,45 +368,45 @@ async function runSearch() {
       abort.signal,
     )
     if (!alive) return
+
     searchFailed.value = !ok
-    showPlaces(places)
+    // A refresh that reached nobody must not empty a map that already has
+    // pins on it. Slightly stale places beat none at all.
+    if (ok || !placeList.length) showPlaces(places, { refit: !quiet })
   } catch (err) {
     if (err.name === 'AbortError') return
     console.warn('[love-machine] Search failed:', err.message)
     searchFailed.value = true
   } finally {
-    if (alive) busy.value = ''
+    searching = false
+    if (alive && !quiet) busy.value = ''
   }
 }
 
 /**
- * Where she is, as well as the device will say.
+ * Start locating her, and keep at it.
  *
- * The first fix a browser hands back is usually the coarse one — the phone
- * answers from wifi and cell towers while the GPS is still warming up, and it
- * sharpens over the next few seconds. So this watches for a moment and keeps
- * the sharpest reading instead of trusting the first, and asks for a fresh fix
- * rather than accepting a cached one from wherever she was earlier today.
+ * Resolves with the first fix so the map can come up straight away, then stays
+ * subscribed: on a phone the opening answer is the coarse one, from wifi and
+ * cell towers, and the GPS lock that replaces it can be twenty seconds behind.
+ * Every sharper reading after the first moves the dot in place, so the position
+ * tightens while she is choosing rather than being frozen at its worst.
+ *
+ * maximumAge is 0 throughout, so nothing here is a cached fix from wherever she
+ * happened to be earlier in the day.
  */
-function locate() {
+function startLocating() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null)
 
-    let best = null
-    let watchId = null
-    let timer = null
-
-    const finish = () => {
-      clearTimeout(timer)
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
-      stopLocating = null
-      resolve(best)
+    let first = true
+    const settle = (value) => {
+      if (!first) return
+      first = false
+      resolve(value)
     }
 
-    stopLocating = finish
-    timer = setTimeout(finish, ACCURACY_WAIT_MS)
-
-    watchId = navigator.geolocation.watchPosition(
+    geoWatchId = navigator.geolocation.watchPosition(
       (pos) => {
         const fix = {
           lat: pos.coords.latitude,
@@ -303,15 +414,15 @@ function locate() {
           accuracy: pos.coords.accuracy ?? null,
         }
 
-        if (!best || (fix.accuracy ?? Infinity) < (best.accuracy ?? Infinity)) best = fix
-        // Already street-level. Waiting the rest of the window buys nothing.
-        if (best.accuracy !== null && best.accuracy <= GOOD_ENOUGH_M) finish()
+        if (first) settle(fix)
+        else if (worthTaking(fix)) applyFix(fix)
       },
       (err) => {
         console.warn('[love-machine] No location:', err.message)
-        finish()
+        // A late fix can still arrive and place her, so the watch stays on.
+        settle(null)
       },
-      { enableHighAccuracy: true, timeout: ACCURACY_WAIT_MS, maximumAge: 0 },
+      { enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 },
     )
   })
 }
@@ -337,40 +448,10 @@ onMounted(async () => {
   setTimeout(() => map?.invalidateSize(), 60)
 
   busy.value = 'FINDING YOU'
-  const me = await locate()
+  const me = await startLocating()
   if (!alive) return
 
-  if (me) {
-    located.value = true
-    accuracy.value = me.accuracy
-
-    // How sure the device is, drawn to scale. A dot alone claims a precision
-    // that wifi-based fixes do not have.
-    if (me.accuracy && me.accuracy > GOOD_ENOUGH_M) {
-      accuracyRing = L.circle([me.lat, me.lng], {
-        radius: me.accuracy,
-        color: '#7bd8c4',
-        weight: 2,
-        opacity: 0.75,
-        fillColor: '#7bd8c4',
-        fillOpacity: 0.15,
-        interactive: false,
-      }).addTo(map)
-    }
-
-    // Draggable, because no browser gets this right indoors and she knows
-    // where she is better than it does.
-    userMarker = L.marker([me.lat, me.lng], {
-      icon: L.divIcon({ className: 'mappin-wrap', html: '<span class="mepin"></span>' }),
-      draggable: true,
-      zIndexOffset: -100,
-    })
-      .addTo(map)
-      .on('dragend', onMeMoved)
-
-    userMarker.getElement()?.setAttribute('title', 'you — drag me if this is not right')
-    map.setView([me.lat, me.lng], accuracy.value && accuracy.value < 200 ? 16 : 14)
-  }
+  if (me) applyFix(me, { center: true })
 
   await runSearch()
   if (alive) busy.value = ''
@@ -379,7 +460,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false
   abort?.abort()
-  stopLocating?.()
+  stopWatching()
   map?.remove()
   map = null
 })
