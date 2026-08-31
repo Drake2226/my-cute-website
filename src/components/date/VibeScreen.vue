@@ -35,9 +35,11 @@ const OPTIONS = [
   { icon: '☕', label: 'Coffee & Chill', spot: 'cafe' },
   { icon: '🌅', label: 'Sunset Picnic', spot: '' },
   { icon: '🎢', label: 'Amusement Park', spot: 'themepark' },
+  { icon: '🛍️', label: 'Mall Day', spot: 'mall' },
   { icon: '🎨', label: 'Paint & Sip', spot: 'art' },
   { icon: '🥾', label: 'Nature Walk', spot: '' },
   { icon: '⛪', label: 'Church Date', spot: 'worship' },
+  { icon: '🏨', label: 'Hotel Getaway', spot: 'hotel' },
   { icon: '🚗', label: 'Road Trip', spot: '' },
   { icon: '🏠', label: 'Cozy Night In', spot: 'snacks' },
 ]
@@ -50,7 +52,7 @@ function choose(option) {
 <style scoped>
 .vibe {
   z-index: 1;
-  gap: 14px;
+  gap: 8px;
 }
 
 .vibe__head,
@@ -79,8 +81,10 @@ function choose(option) {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-auto-rows: minmax(76px, 1fr);
-  gap: 10px;
+  /* Six rows of tiles have to clear the screen without it scrolling, so the
+     rows are shorter than the tiles want to be and stretch into what is left. */
+  grid-auto-rows: minmax(56px, 1fr);
+  gap: 7px;
 }
 
 .tile {
@@ -89,8 +93,8 @@ function choose(option) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 13px 6px;
+  gap: 4px;
+  padding: 10px 6px;
   border: var(--ink);
   border-radius: 14px;
   background: var(--cream);
@@ -125,14 +129,14 @@ function choose(option) {
 }
 
 .tile__icon {
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   line-height: 1;
 }
 
 .tile__label {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
   line-height: 1.15;
   text-align: center;
 }

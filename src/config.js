@@ -16,6 +16,13 @@ import { formatDistance, mapLink } from '@/lib/places.js'
 
 export const RECIPIENT_EMAIL = 'zeddycarcellar@gmail.com'
 
+// A copy of the very same letter, blind-copied to you. Leave it as an empty
+// string to send only to her. This address never shows up in her email: it goes
+// into the template's Bcc field, not the body, so she sees a letter addressed
+// only to her. Needs one change in the EmailJS dashboard to work — see
+// "Send yourself a copy" in README.md.
+export const COPY_TO_EMAIL = 'mmveloso@wage-y.com'
+
 // ===========================================================================
 // 2. THE LETTER — edit these words freely, they are what she made you write.
 // ===========================================================================
@@ -69,6 +76,9 @@ export function isFormspreeConfigured() {
 function letterParams({ dateLabel, dateIso, dateType, dateIcon, place }) {
   return {
     to_email: RECIPIENT_EMAIL,
+    // Empty when you have not asked for a copy. EmailJS renders a blank Bcc as
+    // no Bcc at all, so one template serves both cases.
+    copy_email: COPY_TO_EMAIL,
     subject: EMAIL_SUBJECT,
     date_label: dateLabel,
     date_iso: dateIso,

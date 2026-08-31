@@ -59,19 +59,40 @@ in `app.scss` (`.retro-map`, `.mappin`, `.mepin`), not in the component's scoped
 same reason QDate is restyled there.
 
 Everything about the search degrades instead of failing: Overpass endpoints are tried in order
-with a 12-second per-request timeout, and `describePoint()` falls back to raw coordinates when
+with a per-request timeout (12 s, or `WIDE_TIMEOUT_MS` for the wide categories below), and
+`describePoint()` falls back to raw coordinates when
 Nominatim refuses. Only the caller's abort signal (the level unmounting) propagates as an error
 — a dead server just means the next endpoint's turn. When touching this file, keep that shape: a
 failed search must never block picking a spot.
 
 Two details there are load-bearing and easy to undo by accident:
 
+- **Every line of the Overpass query is another spatial scan of the whole circle**, and at the
+  25 km `radiusM` the wide categories use, those scans are the entire cost of the search. So
+  values of one key are grouped into a single regex selector (`["tourism"~"^(hotel|motel|…)$"]`)
+  rather than one line each, and `relation` is only queried for categories with `areas: true` —
+  malls, hotels, theme parks, the things actually mapped as multipolygons. Splitting a regex back
+  into separate selectors, or adding relations to cafés, multiplies the scans and the query stops
+  coming back at all. Public Overpass servers also throttle hard: a burst of wide queries from one
+  IP gets 429s, then 504s, then refused connections for a while, so test these sparingly.
 - `findNearby()` returns `{ places, ok }`, where `ok: false` means **no server answered** — as
   opposed to a town that genuinely has no cinemas. `PlaceScreen` needs the difference to choose
   between "No X nearby" and "The map search did not answer" plus a retry button. Collapsing it
   back to a bare array reintroduces a UI that blames the town for a network outage.
 - `describePoint()` asks Nominatim at `zoom=18`. That is the building/POI level; at 17 or lower
   it answers with the road instead, so tapping a cinema names the street it sits on.
+- **`OVERPASS_OUT_CAP` is not a result limit — it is a truncation guard.** Overpass cuts to it in
+  its own order, not by distance, so it has to stay well above what a wide search returns or the
+  nearest-first sort is sorting an arbitrary slice and the closest mall can be missing. The
+  user-visible limit is the per-category `max`, applied after sorting.
+- One place arrives as up to three elements — a POI node, a building way, a site relation — all
+  carrying the same name, and a mall's node and centre can be hundreds of metres apart. That is
+  what `dropDuplicates()` folds together, by name within `SAME_PLACE_KM`; a coordinate-string key
+  is too tight for it. Two branches of a chain further apart than that stay separate on purpose.
+- **The search veil is time-boxed to `SEARCH_PATIENCE_MS`**, the same bargain the location veil
+  makes: a 25 km search can take twenty seconds, and she gets the map back at nine while it
+  finishes behind her. `stillLooking` exists to keep the hint honest in that window — otherwise
+  the screen says "No malls nearby" about a search that has not answered yet.
 - **`startLocating()` must be called before the first `await` in `onMounted`.** Safari grants the
   geolocation prompt off the user gesture that opened the level, and awaiting the dynamic Leaflet
   import first spends that activation — the prompt never appears and the level simply never finds
@@ -103,6 +124,13 @@ Two details there are load-bearing and easy to undo by accident:
 must have a matching key in `letterParams()` in `src/config.js`. That HTML is pasted by hand
 into the EmailJS dashboard — it is not bundled or imported — so changing one side requires
 re-pasting the other.
+
+Two `letterParams()` keys have no placeholder in that HTML because they fill dashboard *fields*
+instead: `to_email` (the template's To) and `copy_email` (its Bcc, the `COPY_TO_EMAIL` copy of
+the letter). Neither is visible in the repo, so a missing Bcc field looks exactly like a working
+send that quietly drops the copy. The Bcc route is deliberate over a second `emailjs.send()`:
+`lockItIn()` retries the whole send on failure, and two calls would let a retry deliver her
+letter twice.
 
 ## Styling conventions
 

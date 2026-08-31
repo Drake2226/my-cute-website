@@ -65,6 +65,8 @@ const error = ref(false)
 const found = ref(0)
 const located = ref(false)
 const searchFailed = ref(false)
+// A wide search still running after the veil has been handed back.
+const stillLooking = ref(false)
 // True once we have asked for her location and come away with nothing.
 const geoFailed = ref(false)
 // The last PositionError code: 1 denied, 2 unavailable, 3 timed out. Denial is
@@ -117,6 +119,9 @@ const hint = computed(() => {
   }
   if (!props.category) return 'Tap anywhere on the map to drop our pin.'
   if (found.value) return `Nearest ${plural.value} to you — tap one, or tap anywhere else.`
+  // Still out there looking. Saying so beats "No malls nearby" about a search
+  // that has not come back, and she can pick a spot herself meanwhile.
+  if (stillLooking.value) return `Still looking for ${plural.value} — or tap the map yourself.`
   // "Nothing found" and "nobody answered" look identical on screen unless we
   // say which one happened, and the map search goes down often enough to care.
   if (searchFailed.value) return 'The map search did not answer. Tap anywhere to pick the spot.'
@@ -163,6 +168,10 @@ const ROUGH_M = 500
 const MOVED_M = 200
 // And the search is only worth redoing if she turns out to be this far off.
 const RESEARCH_SHIFT_KM = 0.4
+// The wide categories search 25 km of map and can take twenty seconds to come
+// back. Same reasoning as the location veil: past this she gets the map, and
+// the search carries on behind it and drops its pins whenever it lands.
+const SEARCH_PATIENCE_MS = 9000
 
 function markSelected(el) {
   if (selectedEl) selectedEl.classList.remove('mappin--on')
@@ -403,6 +412,15 @@ async function runSearch({ quiet = false } = {}) {
   searchFailed.value = false
   searchOrigin = { lat: me.lat, lng: me.lng }
 
+  // Hand her the map back while a slow one finishes. `stillLooking` keeps the
+  // hint honest in the gap — without it the screen would say "No malls nearby"
+  // about a search that has not answered yet.
+  const patience = setTimeout(() => {
+    if (!alive || !searching) return
+    busy.value = ''
+    stillLooking.value = true
+  }, SEARCH_PATIENCE_MS)
+
   try {
     const { places, ok } = await findNearby(
       props.category,
@@ -414,13 +432,17 @@ async function runSearch({ quiet = false } = {}) {
     searchFailed.value = !ok
     // A refresh that reached nobody must not empty a map that already has
     // pins on it. Slightly stale places beat none at all.
-    if (ok || !placeList.length) showPlaces(places, { refit: !quiet })
+    // Refitting is also off once she has chosen: results that land late must
+    // not yank the view away from the spot she is looking at.
+    if (ok || !placeList.length) showPlaces(places, { refit: !quiet && !picked.value })
   } catch (err) {
     if (err.name === 'AbortError') return
     console.warn('[love-machine] Search failed:', err.message)
     searchFailed.value = true
   } finally {
+    clearTimeout(patience)
     searching = false
+    stillLooking.value = false
     if (alive && !quiet) busy.value = ''
   }
 }
