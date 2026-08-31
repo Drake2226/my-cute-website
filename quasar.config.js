@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app'
 
-export default defineConfig((/* ctx */) => {
+export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -43,7 +43,10 @@ export default defineConfig((/* ctx */) => {
       vueRouterMode: 'hash', // available values: 'hash', 'history'
       // vueRouterBase,
 
-      // publicPath: '/',
+      // GitHub Pages serves a project site from /<repo>/, not from /, so the
+      // built asset URLs need that prefix or every one of them 404s. Only the
+      // production build gets it; `quasar dev` keeps serving from /.
+      publicPath: ctx.prod ? '/my-cute-website/' : '/',
       // define: {},
       // defineEnv: {}
       // ignorePublicFolder: true,
