@@ -89,6 +89,13 @@ Two details there are load-bearing and easy to undo by accident:
   carrying the same name, and a mall's node and centre can be hundreds of metres apart. That is
   what `dropDuplicates()` folds together, by name within `SAME_PLACE_KM`; a coordinate-string key
   is too tight for it. Two branches of a chain further apart than that stay separate on purpose.
+- **Only three things may move the map, and picking a spot is not one of them:** the world view
+  at mount, the first location fix (`applyFix`'s `center`, never a later one), and a search she
+  asked for (`showPlaces`'s `refit`, which is off for quiet re-searches and once she has picked).
+  `drawLine()` used to pull the view out whenever an end of the trail was off screen; with a
+  25 km search radius her dot usually is, so every tap on a pin undid the zooming she did to
+  find it. Recentring on the spot she just chose is always the wrong instinct here — she is
+  looking right at it.
 - **The search veil is time-boxed to `SEARCH_PATIENCE_MS`**, the same bargain the location veil
   makes: a 25 km search can take twenty seconds, and she gets the map back at nine while it
   finishes behind her. `stillLooking` exists to keep the hint honest in that window — otherwise

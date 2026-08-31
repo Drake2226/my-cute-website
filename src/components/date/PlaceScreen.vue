@@ -225,11 +225,13 @@ function drawLine() {
     trail.forEach((line) => line.setLatLngs(path))
   }
 
-  // Only pull the view when an end is off screen — she may be reading the map.
-  const view = map.getBounds()
-  if (!view.contains(path[0]) || !view.contains(path[1])) {
-    map.fitBounds(L.latLngBounds(path).pad(0.25), { maxZoom: 16 })
-  }
+  // The view is hers. Picking a spot used to pull the map out far enough to
+  // show her dot as well, which sounds helpful and is not: the search reaches
+  // 25 km, so the pin she zoomed in on is usually nowhere near her, and every
+  // tap threw away the zooming she did to find it — worst of all when she was
+  // comparing two places and had to zoom back in for each one. The line is
+  // drawn either way, the distance is on screen below, and getting there is a
+  // pinch she can make herself.
 }
 
 /** Every distance on screen, measured again from wherever she is now. */
