@@ -78,6 +78,16 @@ Two details there are load-bearing and easy to undo by accident:
   anyone. It also asks via `getCurrentPosition` before subscribing with `watchPosition`, because
   Safari can sit on a watch for a long time before its first callback; watch-only looked like a
   permanent "FINDING YOU" on every Apple device. Both were regressions, so keep the order.
+- **The FIND ME button is the only ask iOS reliably answers.** A request made at mount is
+  one Safari may decline to prompt for, and a denial or a timeout there is otherwise final —
+  nothing on the page can raise the prompt a second time. `relocate()` is deliberately not
+  `async`: the `getCurrentPosition` call has to happen before the handler yields, or the tap
+  that authorised it is already spent. The button also appears for a fix looser than `ROUGH_M`
+  ("SHARPEN MY DOT"), because a wifi-sized reading is the other thing waiting never fixes.
+- **The veil is time-boxed to `PATIENCE_MS`, not to the location timeout.** iOS can spend the
+  full 20 s deciding it has nothing, and a level that says "FINDING YOU" for half a minute reads
+  as hung. Past the box she gets the map and the button, and the ask carries on: a fix that lands
+  late still centres her and still runs `searchAroundMe()`, which nothing else would do by then.
 - The user marker — not the geolocation reading — is the source of truth for every distance.
   `startLocating()` resolves on the first fix so the map appears quickly, then stays subscribed
   via `watchPosition`: on a phone the opening answer is a wifi/cell guess and the GPS lock can be
@@ -108,6 +118,9 @@ that screen; reach for an existing token or shared class before adding a new col
   QDate for the console.
 - A `prefers-reduced-motion` block at the bottom of `app.scss` disables the decorative
   animations; new animated decoration should be added to that list.
+- `.warp-leave-active` is `pointer-events: none`. The outgoing screen sits over the incoming one
+  at opacity 0, so without it every tap in that window lands on the level she just left — and a
+  transition that never finishes (a backgrounded tab) leaves that invisible sheet there for good.
 - Fonts (Baloo 2, Courier Prime, Press Start 2P) load from Google Fonts in `index.html`, not npm.
 
 ## Checking it in a browser

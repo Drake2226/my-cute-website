@@ -8,6 +8,10 @@
       <button v-if="searchFailed && !busy" class="place__retry" @click="runSearch()">
         ↻ SEARCH AGAIN
       </button>
+
+      <button v-if="showLocate" class="place__retry" :disabled="locating" @click="relocate">
+        {{ locating ? 'FINDING YOU…' : locateLabel }}
+      </button>
     </div>
 
     <div class="place__stage">
@@ -63,6 +67,11 @@ const located = ref(false)
 const searchFailed = ref(false)
 // True once we have asked for her location and come away with nothing.
 const geoFailed = ref(false)
+// The last PositionError code: 1 denied, 2 unavailable, 3 timed out. Denial is
+// the one she has to leave the page to undo, so it gets its own wording.
+const geoError = ref(null)
+// A hand-driven ask is in flight.
+const locating = ref(false)
 // Metres the device is unsure by, or null once she has placed herself by hand.
 const accuracy = ref(null)
 
@@ -79,13 +88,33 @@ const meLabel = computed(() => {
     : `mint dot = you (±${off}) · drag to fix`
 })
 
+// A fix this loose is a wifi guess. Offering to try again is worth more than
+// leaving her to wonder why the dot is in the next suburb.
+const roughFix = computed(
+  () => located.value && accuracy.value !== null && accuracy.value > ROUGH_M,
+)
+
+// Safari only reliably raises the location prompt for a request made inside a
+// real tap. A prompt it declined to show at mount, a denial, or a fix that came
+// back tower-sized are all dead ends otherwise — nothing on the page can ask a
+// second time on its own. This button is that second ask.
+const showLocate = computed(() => !busy.value && (!located.value || roughFix.value))
+
+const locateLabel = computed(() => (located.value ? '◎ SHARPEN MY DOT' : '◎ FIND ME'))
+
 const plural = computed(() => CATEGORIES[props.category]?.plural ?? '')
 
 const hint = computed(() => {
   if (busy.value) return 'hold on…'
   // Saying it plainly beats a hint that reads as if nothing went wrong: she
   // may have declined the prompt, or it may never have been offered.
-  if (geoFailed.value) return 'Could not get your location. Tap the map to pick the spot.'
+  if (geoFailed.value) {
+    // Only Settings can undo a denial, so pointing at the button would be a
+    // lie; every other failure is worth one more tap.
+    return geoError.value === 1
+      ? 'Location is blocked for this site. Allow it in Settings and tap FIND ME, or tap the map.'
+      : 'Could not find you. Tap FIND ME, or tap the map to pick the spot.'
+  }
   if (!props.category) return 'Tap anywhere on the map to drop our pin.'
   if (found.value) return `Nearest ${plural.value} to you — tap one, or tap anywhere else.`
   // "Nothing found" and "nobody answered" look identical on screen unless we
@@ -119,6 +148,13 @@ let pickSeq = 0
 
 // A cold GPS on a phone can take this long to say anything at all.
 const FIRST_FIX_TIMEOUT_MS = 20000
+// But she should not be looking at a veil for anything like that long. iOS can
+// spend the whole timeout deciding it has nothing, and half a minute of
+// "FINDING YOU" reads as a level that has hung. Past this we hand her the map
+// and the FIND ME button and let the ask finish in the background.
+const PATIENCE_MS = 9000
+// Told apart from a fix that came back empty.
+const STILL_LOOKING = Symbol('still looking')
 // Tight enough that the ring would be smaller than the dot.
 const GOOD_ENOUGH_M = 40
 // Past this, the fix is a guess from wifi and worth complaining about.
@@ -389,6 +425,15 @@ async function runSearch({ quiet = false } = {}) {
   }
 }
 
+/**
+ * Look around the dot, if there is anything to look for and she has not already
+ * chosen. Quiet only while there are pins worth not blanking — the first search
+ * of the level should say what it is doing.
+ */
+function searchAroundMe() {
+  if (props.category && !picked.value) runSearch({ quiet: placeList.length > 0 })
+}
+
 /** Resolves once the map stops moving, or shortly regardless. */
 function whenStill() {
   return new Promise((resolve) => {
@@ -419,9 +464,13 @@ function toFix(pos) {
 function askOnce(options) {
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(toFix(pos)),
+      (pos) => {
+        geoError.value = null
+        resolve(toFix(pos))
+      },
       (err) => {
         console.warn(`[love-machine] Location (${err.code}):`, err.message)
+        geoError.value = err.code
         resolve(null)
       },
       options,
@@ -463,6 +512,16 @@ async function startLocating() {
   if (!alive) return fix
   if (!fix) geoFailed.value = true
 
+  startWatching()
+
+  return fix
+}
+
+/** Subscribe to sharper readings, replacing whatever watch was running. */
+function startWatching() {
+  if (!navigator.geolocation) return
+
+  stopWatching()
   geoWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       const next = toFix(pos)
@@ -471,8 +530,44 @@ async function startLocating() {
     (err) => console.warn(`[love-machine] Location watch (${err.code}):`, err.message),
     { enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 },
   )
+}
 
-  return fix
+/**
+ * Ask again, straight off her tap.
+ *
+ * The ask at mount is the one Safari is free to ignore: it can decline to show
+ * the prompt at all, and a denial or a timeout there is final, because nothing
+ * on the page raises it a second time. A request made inside a gesture handler
+ * is the one iOS answers, which also makes this the only way out of a fix that
+ * came back accurate to a kilometre — the GPS has had time to warm up by now.
+ *
+ * Deliberately not async: the call has to happen before this function yields,
+ * or the tap that authorised it is already spent.
+ */
+function relocate() {
+  if (locating.value || !navigator.geolocation) return
+
+  locating.value = true
+  askOnce({ enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 }).then(
+    (fix) => {
+      if (!alive) return
+      locating.value = false
+
+      if (!fix) {
+        geoFailed.value = true
+        return
+      }
+
+      geoFailed.value = false
+      // She asked to be found, so a dot she dragged earlier is no longer the
+      // answer, and this reading recentres the map the way the first one did.
+      manualPosition = false
+      currentFix = null
+      applyFix(fix, { center: true })
+      startWatching()
+      searchAroundMe()
+    },
+  )
 }
 
 onMounted(async () => {
@@ -514,10 +609,24 @@ onMounted(async () => {
   sizeWatcher.observe(mapEl.value)
 
   busy.value = 'FINDING YOU'
-  const me = await firstFix
+  const me = await Promise.race([
+    firstFix,
+    new Promise((resolve) => setTimeout(() => resolve(STILL_LOOKING), PATIENCE_MS)),
+  ])
   if (!alive) return
 
-  if (me) {
+  if (me === STILL_LOOKING) {
+    // Out of patience, not out of hope: the ask is still running, and a fix
+    // that turns up late still places her and still gets a search of its own,
+    // which nothing else would do for it by then.
+    firstFix.then((late) => {
+      if (!alive || !late) return
+      // Only pull the view if the watch has not already placed her; by now she
+      // may be reading the map, and a recentre would yank it out from under her.
+      applyFix(late, { center: !currentFix })
+      searchAroundMe()
+    })
+  } else if (me) {
     applyFix(me, { center: true })
     // Centring is a movement, and Leaflet reads a tap during one as a drag and
     // throws it away. Hold the veil until the map has stopped, so the first
@@ -599,6 +708,11 @@ async function lockItIn() {
 .place__retry:active {
   transform: translateY(3px);
   box-shadow: none;
+}
+
+.place__retry:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .place__stage {
