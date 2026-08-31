@@ -427,7 +427,12 @@ body {
 
   // Warm the tiles down so the map sits in the same room as the rest of the
   // console instead of shouting over it. Gentle enough to still read as a map.
-  .leaflet-tile {
+  //
+  // Filtering the pane rather than each tile matters: every tile is its own
+  // composited layer, and a filter per layer is work Safari does on the GPU
+  // for each one, every frame of a pan. One filter over the whole pane looks
+  // identical and costs once.
+  .leaflet-tile-pane {
     filter: saturate(0.82) sepia(0.18) brightness(1.03);
   }
 
