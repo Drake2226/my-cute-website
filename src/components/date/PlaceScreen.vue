@@ -16,6 +16,8 @@
       <p v-if="busy" class="place__veil">{{ busy }}<span class="blink">_</span></p>
     </div>
 
+    <p v-if="meLabel && !busy" class="place__me">{{ meLabel }}</p>
+
     <div class="place__pick">
       <template v-if="picked">
         <p class="place__name">{{ picked.name }}</p>
@@ -59,6 +61,15 @@ const error = ref(false)
 const found = ref(0)
 const located = ref(false)
 const searchFailed = ref(false)
+// Metres the device is unsure by, or null once she has placed herself by hand.
+const accuracy = ref(null)
+
+const meLabel = computed(() => {
+  if (!located.value) return ''
+  return accuracy.value
+    ? `mint dot = you (±${formatDistance(accuracy.value / 1000)}) · drag to fix`
+    : 'mint dot = you · drag to fix'
+})
 
 const plural = computed(() => CATEGORIES[props.category]?.plural ?? '')
 
@@ -79,12 +90,20 @@ let L = null
 let map = null
 let userMarker = null
 let placePins = []
+let placeList = []
 let customPin = null
 let selectedEl = null
+let accuracyRing = null
+let trail = []
 let abort = null
 let alive = true
+let stopLocating = null
 // Bumped on every tap so a slow reverse-geocode cannot overwrite a newer pick.
 let pickSeq = 0
+
+// How long to let the fix sharpen, and the point past which it is pointless.
+const ACCURACY_WAIT_MS = 8000
+const GOOD_ENOUGH_M = 40
 
 function markSelected(el) {
   if (selectedEl) selectedEl.classList.remove('mappin--on')
@@ -108,12 +127,75 @@ function farFromUser(latlng) {
   return me ? distanceKm({ lat: me.lat, lng: me.lng }, latlng) : null
 }
 
+/**
+ * The dotted run between her and the spot. Two lines on the same path: a thick
+ * plum one under a thinner pink one, which is how everything else in the
+ * console is drawn.
+ */
+function drawLine() {
+  const me = userMarker?.getLatLng()
+  const to = picked.value
+
+  if (!me || !to) {
+    trail.forEach((line) => map.removeLayer(line))
+    trail = []
+    return
+  }
+
+  const path = [
+    [me.lat, me.lng],
+    [to.lat, to.lng],
+  ]
+
+  if (!trail.length) {
+    const shared = { dashArray: '2 12', lineCap: 'round', interactive: false }
+    trail = [
+      L.polyline(path, { ...shared, color: '#4a2b3d', weight: 8, opacity: 0.9 }).addTo(map),
+      L.polyline(path, { ...shared, color: '#ff5fa2', weight: 4, opacity: 1 }).addTo(map),
+    ]
+  } else {
+    trail.forEach((line) => line.setLatLngs(path))
+  }
+
+  // Only pull the view when an end is off screen — she may be reading the map.
+  const view = map.getBounds()
+  if (!view.contains(path[0]) || !view.contains(path[1])) {
+    map.fitBounds(L.latLngBounds(path).pad(0.25), { maxZoom: 16 })
+  }
+}
+
+/**
+ * She dragged her own dot. A hand-placed position is better than anything the
+ * browser guessed, so the ring of uncertainty goes away and every distance is
+ * measured again from the new spot.
+ */
+function onMeMoved() {
+  if (accuracyRing) {
+    map.removeLayer(accuracyRing)
+    accuracyRing = null
+  }
+  accuracy.value = null
+
+  const me = userMarker.getLatLng()
+  const from = { lat: me.lat, lng: me.lng }
+
+  // The markers close over these objects, so updating them in place keeps a
+  // later tap on a pin honest too.
+  placeList.forEach((place) => {
+    place.km = distanceKm(from, place)
+  })
+
+  if (picked.value) picked.value = { ...picked.value, km: distanceKm(from, picked.value) }
+  drawLine()
+}
+
 function showPlaces(places) {
   found.value = places.length
 
   // A retry starts from a clean map.
   placePins.forEach((pin) => map.removeLayer(pin))
   placePins = []
+  placeList = places
 
   places.forEach((place) => {
     const marker = L.marker([place.lat, place.lng], { icon: pinIcon(props.icon) })
@@ -122,6 +204,7 @@ function showPlaces(places) {
         pickSeq += 1
         markSelected(marker.getElement())
         picked.value = { ...place }
+        drawLine()
       })
 
     marker.getElement()?.setAttribute('title', place.name)
@@ -148,6 +231,7 @@ async function pickPoint(latlng) {
   const km = farFromUser(latlng)
   const coords = { lat: latlng.lat, lng: latlng.lng }
   picked.value = { name: 'that spot', address: '', ...coords, km }
+  drawLine()
 
   try {
     const described = await describePoint(coords, abort?.signal)
@@ -184,17 +268,50 @@ async function runSearch() {
   }
 }
 
+/**
+ * Where she is, as well as the device will say.
+ *
+ * The first fix a browser hands back is usually the coarse one — the phone
+ * answers from wifi and cell towers while the GPS is still warming up, and it
+ * sharpens over the next few seconds. So this watches for a moment and keeps
+ * the sharpest reading instead of trusting the first, and asks for a fresh fix
+ * rather than accepting a cached one from wherever she was earlier today.
+ */
 function locate() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null)
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+    let best = null
+    let watchId = null
+    let timer = null
+
+    const finish = () => {
+      clearTimeout(timer)
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+      stopLocating = null
+      resolve(best)
+    }
+
+    stopLocating = finish
+    timer = setTimeout(finish, ACCURACY_WAIT_MS)
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const fix = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null,
+        }
+
+        if (!best || (fix.accuracy ?? Infinity) < (best.accuracy ?? Infinity)) best = fix
+        // Already street-level. Waiting the rest of the window buys nothing.
+        if (best.accuracy !== null && best.accuracy <= GOOD_ENOUGH_M) finish()
+      },
       (err) => {
         console.warn('[love-machine] No location:', err.message)
-        resolve(null)
+        finish()
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 300000 },
+      { enableHighAccuracy: true, timeout: ACCURACY_WAIT_MS, maximumAge: 0 },
     )
   })
 }
@@ -225,12 +342,34 @@ onMounted(async () => {
 
   if (me) {
     located.value = true
+    accuracy.value = me.accuracy
+
+    // How sure the device is, drawn to scale. A dot alone claims a precision
+    // that wifi-based fixes do not have.
+    if (me.accuracy && me.accuracy > GOOD_ENOUGH_M) {
+      accuracyRing = L.circle([me.lat, me.lng], {
+        radius: me.accuracy,
+        color: '#7bd8c4',
+        weight: 2,
+        opacity: 0.75,
+        fillColor: '#7bd8c4',
+        fillOpacity: 0.15,
+        interactive: false,
+      }).addTo(map)
+    }
+
+    // Draggable, because no browser gets this right indoors and she knows
+    // where she is better than it does.
     userMarker = L.marker([me.lat, me.lng], {
       icon: L.divIcon({ className: 'mappin-wrap', html: '<span class="mepin"></span>' }),
-      interactive: false,
+      draggable: true,
       zIndexOffset: -100,
-    }).addTo(map)
-    map.setView([me.lat, me.lng], 14)
+    })
+      .addTo(map)
+      .on('dragend', onMeMoved)
+
+    userMarker.getElement()?.setAttribute('title', 'you — drag me if this is not right')
+    map.setView([me.lat, me.lng], accuracy.value && accuracy.value < 200 ? 16 : 14)
   }
 
   await runSearch()
@@ -240,6 +379,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false
   abort?.abort()
+  stopLocating?.()
   map?.remove()
   map = null
 })
@@ -338,6 +478,16 @@ async function lockItIn() {
   font-size: 7px;
   letter-spacing: 0.12em;
   color: var(--plum);
+}
+
+.place__me {
+  margin: -2px 0 0;
+  font-family: var(--font-hud);
+  font-size: 6px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  line-height: 1.6;
+  color: rgba(74, 43, 61, 0.5);
 }
 
 .place__pick {
