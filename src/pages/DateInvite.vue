@@ -7,11 +7,16 @@
 
       <DayScreen v-else-if="step === 'day'" @pick="onPickDay" />
 
-      <VibeScreen
-        v-else-if="step === 'vibe'"
+      <VibeScreen v-else-if="step === 'vibe'" :date-label="answer.dateLabel" @done="onPickVibe" />
+
+      <PlaceScreen
+        v-else-if="step === 'place'"
         :date-label="answer.dateLabel"
         :date-iso="answer.dateIso"
-        @done="onPickVibe"
+        :date-type="answer.dateType"
+        :icon="answer.icon"
+        :category="answer.category"
+        @done="onPickPlace"
       />
 
       <WinScreen
@@ -19,6 +24,8 @@
         :date-label="answer.dateLabel"
         :date-type="answer.dateType"
         :icon="answer.icon"
+        :place="answer.place"
+        @restart="onRestart"
       />
     </Transition>
   </ConsoleShell>
@@ -37,6 +44,7 @@ import BootScreen from '@/components/date/BootScreen.vue'
 import AskScreen from '@/components/date/AskScreen.vue'
 import DayScreen from '@/components/date/DayScreen.vue'
 import VibeScreen from '@/components/date/VibeScreen.vue'
+import PlaceScreen from '@/components/date/PlaceScreen.vue'
 import WinScreen from '@/components/date/WinScreen.vue'
 import { isEmailJsConfigured, isFormspreeConfigured } from '@/config.js'
 
@@ -45,15 +53,18 @@ const LEVELS = {
   ask: { n: 1, label: 'THE ASK' },
   day: { n: 2, label: 'PICK THE DAY' },
   vibe: { n: 3, label: 'PICK THE VIBE' },
-  win: { n: 4, label: 'YOU WIN' },
+  place: { n: 4, label: 'PICK THE SPOT' },
+  win: { n: 5, label: 'YOU WIN' },
 }
+
+const BLANK = { dateIso: '', dateLabel: '', dateType: '', icon: '💗', category: '', place: null }
 
 // An unconfigured send is silent on purpose so she never sees an error. That
 // silence is confusing while testing, so say it out loud during development.
 const showSetupWarning = import.meta.env.DEV && !isEmailJsConfigured() && !isFormspreeConfigured()
 
 const step = ref('boot')
-const answer = reactive({ dateIso: '', dateLabel: '', dateType: '', icon: '💗' })
+const answer = reactive({ ...BLANK })
 
 const level = computed(() => LEVELS[step.value].n)
 const levelLabel = computed(() => LEVELS[step.value].label)
@@ -64,10 +75,25 @@ function onPickDay({ dateIso, dateLabel }) {
   step.value = 'vibe'
 }
 
-function onPickVibe({ dateType, icon }) {
+function onPickVibe({ dateType, icon, category }) {
   answer.dateType = dateType
   answer.icon = icon
+  answer.category = category
+  step.value = 'place'
+}
+
+// The map level sends the letter — it is the last thing she picks — so by the
+// time this runs the email is already on its way.
+function onPickPlace({ place }) {
+  answer.place = place
   step.value = 'win'
+}
+
+// The last level runs itself out after half a minute and hands the console back
+// to the boot screen, cleared of the previous answer.
+function onRestart() {
+  Object.assign(answer, { ...BLANK })
+  step.value = 'boot'
 }
 
 onMounted(() => {
