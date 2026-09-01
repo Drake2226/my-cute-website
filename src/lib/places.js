@@ -1,3 +1,9 @@
+// config.js imports this module for formatDistance and mapLink, so this import
+// closes a cycle. It is safe because neither side touches the other while its
+// own module body runs: the key is read inside askGeoapify, long after both
+// have finished loading.
+import { GEOAPIFY_KEY, isGeoapifyConfigured } from '@/config.js'
+
 // ---------------------------------------------------------------------------
 // The map level's data layer: what counts as "nearby" for each date type, how
 // to ask OpenStreetMap for those places, and how far apart two points are.
@@ -23,6 +29,7 @@
 export const CATEGORIES = {
   cinema: {
     plural: 'movie theatres',
+    geo: ['entertainment.cinema'],
     selectors: ['["amenity"="cinema"]'],
   },
   restaurant: {
@@ -32,6 +39,7 @@ export const CATEGORIES = {
     // under every burger counter in the province.
     radiusM: 25000,
     max: 60,
+    geo: ['catering.restaurant'],
     selectors: ['["amenity"~"^(restaurant|food_court)$"]'],
   },
   cafe: {
@@ -40,6 +48,7 @@ export const CATEGORIES = {
     max: 60,
     // Milk tea shops are usually amenity=cafe with a cuisine tag, so the first
     // selector already has them; the second is for the few mapped as shops.
+    geo: ['catering.cafe'],
     selectors: ['["amenity"~"^(cafe|coffee_shop)$"]', '["shop"="bubble_tea"]'],
   },
   themepark: {
@@ -49,10 +58,12 @@ export const CATEGORIES = {
     radiusM: 60000,
     max: 20,
     areas: true,
+    geo: ['entertainment.theme_park', 'entertainment.water_park'],
     selectors: ['["tourism"="theme_park"]', '["leisure"="water_park"]'],
   },
   art: {
     plural: 'art studios',
+    geo: ['entertainment.culture.arts_centre', 'entertainment.culture.gallery'],
     selectors: ['["amenity"="arts_centre"]', '["shop"="art"]', '["craft"="pottery"]'],
   },
   mall: {
@@ -60,6 +71,7 @@ export const CATEGORIES = {
     radiusM: 25000,
     max: 60,
     areas: true,
+    geo: ['commercial.shopping_mall', 'commercial.department_store'],
     selectors: ['["shop"~"^(mall|department_store)$"]'],
   },
   hotel: {
@@ -68,31 +80,48 @@ export const CATEGORIES = {
     max: 60,
     areas: true,
     // Every kind of place you can book a room in, not just the ones calling
-    // themselves hotels. `building=hotel` catches the ones mapped as a building
-    // and never given a tourism tag, which is common outside the city centre.
+    // themselves hotels. `["building"="hotel"]` used to be here too, for rooms
+    // mapped as a building and never given a tourism tag — measured over 25 km
+    // around Tacloban it cost 3.5s against 1.9s without, and found 142 named
+    // places against 141. One extra hotel is not worth doubling the wait on a
+    // level that is already the slowest thing here.
+    geo: ['accommodation.hotel', 'accommodation.motel', 'accommodation.guest_house'],
     selectors: [
       '["tourism"~"^(hotel|motel|guest_house|hostel|apartment)$"]',
       '["leisure"="resort"]',
-      '["building"="hotel"]',
     ],
   },
   worship: {
     plural: 'churches',
     radiusM: 25000,
     max: 60,
-    // Plenty of churches carry no `religion` tag at all, so asking only for
-    // religion=christian silently skips them — including small barangay
-    // chapels. The building tags are how those come back.
-    selectors: [
-      '["amenity"="place_of_worship"]["religion"="christian"]',
-      '["building"~"^(church|cathedral|chapel)$"]',
-    ],
+    geo: ['religion.place_of_worship.christianity'],
+    // Ask for every place of worship and sift afterwards, rather than asking
+    // for churches specifically. Timed over 25 km around Tacloban:
+    //
+    //   ["amenity"="place_of_worship"]["religion"="christian"]   2.5s,  81 named
+    //   ["building"~"^(church|cathedral|chapel)$"]              never finished
+    //   both together, as this used to ship                     never finished
+    //   ["amenity"="place_of_worship"]                           2.1s, 105 named
+    //
+    // The building regex was here because plenty of churches carry no religion
+    // tag and were being skipped — a real problem, fixed at a price that made
+    // the level unusable, since matching on `building` means scanning every
+    // building in the circle. Dropping the religion filter fixes the same
+    // problem and is *faster* than the narrow query was.
+    //
+    // `keep` then does the narrowing for free, on data already in hand: an
+    // untagged place of worship stays (that was the whole point), and one
+    // explicitly tagged as something else does not.
+    selectors: ['["amenity"="place_of_worship"]'],
+    keep: (tags) => !tags.religion || tags.religion === 'christian',
   },
   snacks: {
     // A night in still needs a snack run, so this points at the shops for it.
     plural: 'snack stops',
     radiusM: 25000,
     max: 60,
+    geo: ['commercial.supermarket', 'commercial.convenience', 'catering.ice_cream'],
     selectors: ['["shop"~"^(supermarket|convenience|bakery)$"]', '["amenity"="ice_cream"]'],
   },
 }
@@ -128,17 +157,38 @@ const WIDE_TIMEOUT_MS = 22000
 // run of searches from one address earns a 429 from the busiest of them, and
 // the next one along is often mid-timeout at the same moment. Each extra mirror
 // is another chance that somebody answers before she gives up.
-const OVERPASS_ENDPOINTS = [
+//
+// **A mirror belongs here only after `node scripts/check-overpass.mjs` passes it**,
+// and that script checks two separate things because this list has been wrong
+// twice for two different reasons.
+//
+// Reachability: kumi.systems and private.coffee went on unverified and turned
+// out to be unreachable from a page — one timed out, the other failed outright,
+// and since neither returned a response there was no CORS header either, so
+// every attempt also spat a red cross-origin error into the console. Fetching
+// from Node proves nothing here, because Node does not enforce CORS.
+//
+// Coverage, which is the nastier one: overpass.osm.ch is the Swiss chapter's
+// instance and holds **only Switzerland**. It answered 200 in about two seconds
+// with an empty `elements` array for everywhere else on earth, won the race
+// against slower planet servers, and had the level telling people there were no
+// cinemas in their city. A server that is merely down is obvious; a server that
+// confidently answers "nothing" is not. The script asks each candidate for
+// cafés in both Manila and Zurich — a real instance finds plenty of both.
+export const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
-// How long a server that just turned us away is left alone for. A 429 is the
-// server saying so in as many words, so it earns the longer bench; a timeout or
-// a 504 is more likely a passing overload.
+// How long a server that just turned us away is left alone for. A 429 says so
+// in as many words and earns the longest bench. A 5xx is the server itself in
+// trouble, which tends to last minutes rather than seconds. A timeout or a
+// refused connection might just as easily be this phone's signal, so that one
+// stays short — benching a good server over a moment of bad wifi would be the
+// worse mistake.
 const COOL_OFF_RATE_MS = 5 * 60 * 1000
+const COOL_OFF_SICK_MS = 3 * 60 * 1000
 const COOL_OFF_BUSY_MS = 60 * 1000
 const COOL_OFF_MAX_MS = 10 * 60 * 1000
 
@@ -223,7 +273,12 @@ function timeLimited(signal, ms = REQUEST_TIMEOUT_MS) {
 
   signal?.addEventListener('abort', () => ctrl.abort(), { once: true })
 
-  return { signal: ctrl.signal, done: () => clearTimeout(timer) }
+  return {
+    signal: ctrl.signal,
+    done: () => clearTimeout(timer),
+    // For giving up on an attempt that has been overtaken by a faster one.
+    abort: () => ctrl.abort(),
+  }
 }
 
 /** Great-circle distance in kilometres. */
@@ -330,6 +385,17 @@ function searchKey(categoryKey, center, radiusM) {
 
 const searchCache = new Map()
 
+// A search where nobody answered is not cached — a dead server is not an
+// answer about the world — but it must not be repeated on the spot either. The
+// warm search and the level's own ask are seconds apart, and without this every
+// endpoint got asked twice in a row at exactly the moment they were all saying
+// no. An explicit retry passes `force` and ignores this entirely.
+const FAILURE_QUIET_MS = 15 * 1000
+const failedAt = new Map()
+
+// key -> the promise of a search already on its way. Emptied as each settles.
+const inFlight = new Map()
+
 function cachedSearch(categoryKey, center, radiusM) {
   const hit = searchCache.get(searchKey(categoryKey, center, radiusM))
   return hit && Date.now() - hit.at < SEARCH_TTL_MS ? hit.found : null
@@ -369,7 +435,7 @@ function rankFrom(center, found, max) {
  * is a very different thing from a town with no cinemas in it: the caller has
  * to be able to say "the search broke" instead of "there is nothing near you."
  */
-export async function findNearby(categoryKey, center, signal) {
+export async function findNearby(categoryKey, center, signal, { force = false } = {}) {
   const category = CATEGORIES[categoryKey]
   if (!category) return { places: [], ok: true }
 
@@ -382,17 +448,144 @@ export async function findNearby(categoryKey, center, signal) {
   const cached = cachedSearch(categoryKey, center, radiusM)
   if (cached) return { places: rankFrom(center, cached, max), ok: true }
 
-  const query = buildQuery(category.selectors, center, radiusM, category.areas)
+  // Two callers can want the same search at once — warmup.js starts one as she
+  // picks the date type, and the level asks for itself a moment later. The
+  // cache cannot catch that, because neither has finished; without joining the
+  // one already running, the head start would cost a duplicate query instead of
+  // saving a wait.
+  const key = searchKey(categoryKey, center, radiusM)
 
-  // One mirror refusing is routine — that is what the other three are for — so
-  // the attempts are collected and only spoken about if every one of them
-  // fails. A console warning per fallback reads like a broken app on a level
-  // that is working exactly as designed.
-  const refusals = []
+  if (!force) {
+    const failed = failedAt.get(key)
+    if (failed && Date.now() - failed < FAILURE_QUIET_MS) return { places: [], ok: false }
+  }
 
-  for (const endpoint of endpointsToTry()) {
-    const limit = timeLimited(signal, timeoutMs)
+  let job = inFlight.get(key)
 
+  if (!job) {
+    job = askForPlaces(category, center, radiusM, max, timeoutMs, signal)
+    inFlight.set(key, job)
+    job.catch(() => {}).then(() => inFlight.delete(key))
+  }
+
+  let found
+  try {
+    found = await job
+  } catch (err) {
+    // Only the caller leaving the level should stop the search; anything else
+    // is a dead server, which is a result of its own.
+    if (signal?.aborted) throw err
+    return { places: [], ok: false }
+  }
+
+  if (!found) {
+    failedAt.set(key, Date.now())
+    return { places: [], ok: false }
+  }
+
+  failedAt.delete(key)
+  rememberSearch(categoryKey, center, radiusM, found)
+  return { places: rankFrom(center, found, max), ok: true }
+}
+
+// Geoapify serves the same OpenStreetMap data as Overpass, from servers that
+// are paid for rather than donated. Its circle filter has a radius ceiling, so
+// the one category that reaches further than that (theme parks, 60 km) is
+// clamped here and leans on Overpass for the rest of its range.
+const GEOAPIFY_URL = 'https://api.geoapify.com/v2/places'
+const GEOAPIFY_MAX_RADIUS_M = 50000
+
+/**
+ * Ask Geoapify. Resolves with the raw list of places, or null if it could not
+ * answer — which is the signal to fall through to the Overpass mirrors.
+ *
+ * Null covers a wrong key, a spent quota, and a category id this taxonomy does
+ * not have. That last one matters: the ids come from Geoapify's documented list
+ * rather than from a live key, so a wrong one shows up as that single category
+ * quietly using Overpass instead of as a broken level.
+ */
+async function askGeoapify(category, center, radiusM, max, signal) {
+  if (!isGeoapifyConfigured() || !category.geo?.length) return null
+
+  const limit = timeLimited(signal, REQUEST_TIMEOUT_MS)
+
+  const url = new URL(GEOAPIFY_URL)
+  url.searchParams.set('categories', category.geo.join(','))
+  url.searchParams.set(
+    'filter',
+    `circle:${center.lng},${center.lat},${Math.min(radiusM, GEOAPIFY_MAX_RADIUS_M)}`,
+  )
+  // Nearest-first from the source rather than whatever order it felt like
+  // sending. The caller re-measures anyway, but this decides which places make
+  // the cut when there are more matches than `limit`.
+  url.searchParams.set('bias', `proximity:${center.lng},${center.lat}`)
+  url.searchParams.set('limit', String(max))
+  url.searchParams.set('apiKey', GEOAPIFY_KEY)
+
+  try {
+    const res = await fetch(url, { signal: limit.signal })
+
+    if (!res.ok) {
+      console.warn(`[love-machine] Geoapify answered ${res.status}; falling back to Overpass.`)
+      return null
+    }
+
+    const { features = [] } = await res.json()
+
+    return features
+      .map((feature) => {
+        const props = feature.properties ?? {}
+        const [lon, lat] = feature.geometry?.coordinates ?? []
+        const placeLat = props.lat ?? lat
+        const placeLng = props.lon ?? lon
+        if (!props.name || typeof placeLat !== 'number') return null
+
+        return {
+          id: `geoapify-${props.place_id ?? `${placeLat},${placeLng}`}`,
+          name: props.name,
+          // address_line2 is the street and city without the name repeated back
+          // at us, which is what the pin bubble wants.
+          address: props.address_line2 ?? props.formatted ?? '',
+          lat: placeLat,
+          lng: placeLng,
+        }
+      })
+      .filter(Boolean)
+  } catch (err) {
+    if (signal?.aborted) throw err
+    console.warn(`[love-machine] Geoapify did not answer (${err.message}); using Overpass.`)
+    return null
+  } finally {
+    limit.done()
+  }
+}
+
+/**
+ * How long one server gets on its own before the next is asked alongside it.
+ *
+ * Strict one-at-a-time was costing the full request timeout every time the
+ * server at the front of the list was merely slow rather than broken — twelve
+ * seconds of nothing before the next was even tried, on a level where the veil
+ * lifts at nine. Racing them all from the start would be the burst that gets
+ * this address banned; letting a stalled attempt be overtaken costs one extra
+ * request only when one is actually stalling.
+ */
+const HEDGE = Symbol('hedge')
+
+const HEDGE_MS = 3500
+
+/**
+ * One request to one server.
+ *
+ * Never throws for a server's sake — a refusal comes back as `why`, because a
+ * dead endpoint is an expected outcome here, not an exception. It throws only
+ * for the caller's own abort, which is the level unmounting and does mean stop.
+ */
+function askOne(endpoint, query, timeoutMs, signal, keep) {
+  const limit = timeLimited(signal, timeoutMs)
+  let overtaken = false
+
+  const promise = (async () => {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -400,55 +593,171 @@ export async function findNearby(categoryKey, center, signal) {
         body: `data=${encodeURIComponent(query)}`,
         signal: limit.signal,
       })
+
       if (!res.ok) {
         // 429 is the server saying "not you, not now" — asking it again in ten
         // seconds only digs the hole deeper, so it goes on the bench and the
         // next mirror gets the question.
-        benchEndpoint(endpoint, res.status === 429 ? retryAfterMs(res) : COOL_OFF_BUSY_MS)
-        refusals.push(`${endpoint} answered ${res.status}`)
-        continue
+        benchEndpoint(endpoint, res.status === 429 ? retryAfterMs(res) : COOL_OFF_SICK_MS)
+        return { endpoint, why: `${endpoint} answered ${res.status}` }
       }
 
       const { elements = [] } = await res.json()
 
-      const found = elements
-        .map((el) => {
-          const point = el.center ?? el
-          const tags = el.tags ?? {}
-          if (!tags.name || typeof point.lat !== 'number') return null
-
-          return {
-            id: `${el.type}-${el.id}`,
-            name: tags.name,
-            address: addressFromTags(tags),
-            lat: point.lat,
-            lng: point.lon,
-          }
-        })
-        .filter(Boolean)
-
       // It answered, so whatever it was busy with is over.
       clearBench(endpoint)
-      rememberSearch(categoryKey, center, radiusM, found)
 
-      return { places: rankFrom(center, found, max), ok: true }
+      return {
+        endpoint,
+        found: elements
+          .map((el) => {
+            const point = el.center ?? el
+            const tags = el.tags ?? {}
+            if (!tags.name || typeof point.lat !== 'number') return null
+            // Narrowing that would have been ruinous to ask the server for, done
+            // here for nothing on data already fetched.
+            if (keep && !keep(tags)) return null
+
+            return {
+              id: `${el.type}-${el.id}`,
+              name: tags.name,
+              address: addressFromTags(tags),
+              lat: point.lat,
+              lng: point.lon,
+            }
+          })
+          .filter(Boolean),
+      }
     } catch (err) {
-      // Only the caller leaving the level should stop the search; a server
-      // that timed out or refused just means it is the next one's turn.
       if (signal?.aborted) throw err
+      // Cancelled because somebody else won. That says nothing about this
+      // server, so it earns neither a bench nor a place in the complaints.
+      if (overtaken) return { endpoint, quiet: true }
+
       benchEndpoint(endpoint, COOL_OFF_BUSY_MS)
-      refusals.push(`${endpoint} did not answer (${err.message})`)
+      return { endpoint, why: `${endpoint} did not answer (${err.message})` }
     } finally {
       limit.done()
     }
+  })()
+
+  return {
+    promise,
+    overtake() {
+      overtaken = true
+      limit.abort()
+    },
   }
+}
+
+/**
+ * A list of places from whichever provider can supply one.
+ *
+ * Geoapify first when a key is configured, because it answers reliably.
+ * Overpass behind it, because it needs no key and is therefore what most copies
+ * of this run on. A Geoapify failure falls through rather than erroring: the
+ * level must never end up worse off for having a key.
+ */
+async function askForPlaces(category, center, radiusM, max, timeoutMs, signal) {
+  const fromGeoapify = await askGeoapify(category, center, radiusM, max, signal)
+  if (fromGeoapify) return fromGeoapify
+
+  return askTheServers(category, center, radiusM, timeoutMs, signal)
+}
+
+/**
+ * Ask the servers until one answers, giving each a head start of its own.
+ *
+ * Resolves with the raw list of named places, or null when nobody answered at
+ * all. Kept separate from findNearby so the promise can be shared: everything
+ * about caching, ranking and joining a search already in flight belongs to the
+ * caller, and this only knows how to get an answer out of a server.
+ */
+async function askTheServers(category, center, radiusM, timeoutMs, signal) {
+  const query = buildQuery(category.selectors, center, radiusM, category.areas)
+  const queue = endpointsToTry()
+
+  // One mirror refusing is routine — that is what the others are for — so the
+  // attempts are collected and only spoken about if every one of them fails. A
+  // console warning per fallback reads like a broken app on a level that is
+  // working exactly as designed.
+  const refusals = []
+  const running = new Map()
+  let started = 0
+
+  // A server answering "nothing here" is only believed once there is nobody
+  // left who might disagree. One regional extract in the list was enough to
+  // have the map denying that a city had cinemas, and an empty answer looks
+  // exactly like a good one — 200, well formed, just wrong. Costs an extra
+  // request only on searches that genuinely find nothing.
+  let sawEmpty = false
+
+  const startNext = () => {
+    if (started >= queue.length) return
+    const endpoint = queue[started++]
+    const attempt = askOne(endpoint, query, timeoutMs, signal, category.keep)
+    running.set(endpoint, attempt)
+  }
+
+  const stopTheRest = () => {
+    for (const attempt of running.values()) attempt.overtake()
+    running.clear()
+  }
+
+  startNext()
+
+  try {
+    while (running.size) {
+      // Whichever settles first, or the hedge timer if they are all still out.
+      let hedge
+      const waitToHedge =
+        started < queue.length
+          ? new Promise((resolve) => {
+              hedge = setTimeout(() => resolve(HEDGE), HEDGE_MS)
+            })
+          : null
+
+      const settled = await Promise.race(
+        [...[...running.values()].map((a) => a.promise), waitToHedge].filter(Boolean),
+      )
+      clearTimeout(hedge)
+
+      if (settled === HEDGE) {
+        // Nobody has answered yet and there is another server to ask. The slow
+        // one keeps going: it may still win, and cancelling it would throw away
+        // the head start it already has.
+        startNext()
+        continue
+      }
+
+      running.delete(settled.endpoint)
+
+      if (settled.found?.length) {
+        stopTheRest()
+        return settled.found
+      }
+
+      if (settled.found) sawEmpty = true
+      else if (settled.why) refusals.push(settled.why)
+
+      if (!running.size) startNext()
+    }
+  } catch (err) {
+    stopTheRest()
+    throw err
+  }
+
+  // Everyone who answered agreed there is nothing of this kind around her,
+  // which is a real answer and not a failure — the level should say "no cinemas
+  // nearby", not "the search broke".
+  if (sawEmpty) return []
 
   console.warn(
     '[love-machine] No Overpass server answered, so there are no pins to show. ' +
       'She can still pick the spot by tapping the map.',
     refusals,
   )
-  return { places: [], ok: false }
+  return null
 }
 
 /**

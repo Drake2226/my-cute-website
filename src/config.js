@@ -63,7 +63,31 @@ export const EMAILJS = {
 }
 
 // ===========================================================================
-// 4. FORMSPREE — optional fallback. Only used when EmailJS is not filled in.
+// 4. GEOAPIFY — optional, and the one thing that most improves the map level.
+//
+//    Without it the map asks the free, shared Overpass servers, which are the
+//    same ones the whole internet uses: they answer 429 or 504 often enough
+//    that the level regularly falls back to "tap the map yourself". Geoapify
+//    serves the same OpenStreetMap data from paid-grade servers.
+//
+//    Getting a key: sign up at geoapify.com (email only, no card), make a
+//    project, copy its API key here. The free tier is a few thousand requests
+//    a day, which is far more than this will ever use. Lock the key to your
+//    own domain in their dashboard — like the EmailJS key, it is visible in
+//    browser code, and that restriction is what stops anyone else spending it.
+//
+//    Leaving it as-is is fine. The map falls back to Overpass and works
+//    exactly as it does today.
+// ===========================================================================
+
+export const GEOAPIFY_KEY = 'YOUR_GEOAPIFY_KEY'
+
+export function isGeoapifyConfigured() {
+  return !GEOAPIFY_KEY.startsWith('YOUR_')
+}
+
+// ===========================================================================
+// 5. FORMSPREE — optional fallback. Only used when EmailJS is not filled in.
 //    Sends a plain notification with the date and the plan, no design.
 // ===========================================================================
 
