@@ -88,12 +88,12 @@
           >
         </p>
         <p class="me__date-count">{{ countdown }}</p>
-        <router-link to="/" class="minibtn me__again">Plan another one 💌</router-link>
+        <router-link to="/invite" class="minibtn me__again">Plan another one 💌</router-link>
       </div>
 
       <p v-else class="emptynote">
         No date on the books. The invite is still sitting in the cartridge slot —
-        <router-link to="/">go and ask her</router-link>. 💗
+        <router-link to="/invite">go and ask her</router-link>. 💗
       </p>
 
       <!-- Everything queued behind the next one, soonest first. Without this the

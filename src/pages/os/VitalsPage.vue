@@ -20,6 +20,18 @@
       </span>
     </router-link>
 
+    <!-- With the app as the front door, the invite needs a door of its own on
+         the page she opens onto. Without this, nothing on the summary points at
+         the one thing the machine was built to do. -->
+    <router-link v-else to="/invite" class="card card--tint vitals__date">
+      <span class="vitals__date-icon" aria-hidden="true">💌</span>
+      <span class="vitals__date-body">
+        <span class="vitals__date-label">NOTHING IN THE DIARY</span>
+        <span class="vitals__date-what">Ask her out ›</span>
+        <span class="vitals__date-where">the console is warmed up and waiting</span>
+      </span>
+    </router-link>
+
     <section class="card">
       <VitalRings :rings="rings" />
     </section>

@@ -4,6 +4,11 @@ A pink retro handheld console, rendered in the browser, that asks one question a
 emails you a matching letter with her answer. Built with Quasar (Vue 3 + Vite) as a
 single-page app that runs as a short sequence of screens:
 
+Opening it opens **Love Vitals**, the diary. The invite is a room off it — the 💌 in
+the header, *Plan another one* on the Us tab, or the card on the summary when nothing
+is planned. Every level of the invite has a back button, so a wrong turn is one tap to
+undo.
+
 1. **Boot** — a pixel heart fills from the tip up, then `PRESS START`.
 2. **Where to?** — the first time only, a box asking which inbox the letter should be
    posted to. It is remembered afterwards, so it never appears again; change it any

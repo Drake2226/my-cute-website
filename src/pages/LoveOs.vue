@@ -6,7 +6,7 @@
         <span class="oshud__day">{{ today }}</span>
         <!-- The only way back to the invite. It lives up here rather than in
              the tab bar so the four tabs stay the four sections of the app. -->
-        <router-link to="/" class="oshud__back" title="Back to the invite">💌</router-link>
+        <router-link to="/invite" class="oshud__back" title="Ask her out">💌</router-link>
       </div>
     </template>
 

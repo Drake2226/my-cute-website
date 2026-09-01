@@ -37,8 +37,18 @@ so ESLint errors surface in the dev build output.
 
 ## Architecture
 
-**Two routes: the invite, and the app behind it.** `src/router/routes.js` maps `/` to
-`src/pages/DateInvite.vue` and `/os/*` to the Love Vitals tabs (see below); everything else is a 404.
+**The app is the front door; the invite is a room off it.** `/` redirects to `/os`, the invite
+lives at `/invite`, and everything else is a 404. Opening the app opens the diary — most visits
+are to that, and the question only gets asked now and then. The invite is reached from the 💌 in
+the app header, from *Plan another one* on the Us tab, and from the summary card that appears
+when no date is planned. That last one matters: without it nothing on the page she opens onto
+points at the thing the machine was built for.
+
+`App.vue` shows `SplashScreen.vue` over everything until the app is ready — at least 900ms so it
+reads as a moment rather than a flicker, at most 2600ms because everything it waits on can fail.
+What it is really waiting for is `document.fonts.ready`: the CSS lands before the fonts do, so
+without it the first thing she sees is the right layout in the wrong typeface, snapping into
+place a beat later.
 
 **The invite is six "levels."** `DateInvite.vue` is the only stateful component: a `step` ref
 (`boot | mail | ask | day | vibe | place | win`) selects which `*Screen.vue` renders inside a
@@ -320,6 +330,28 @@ that screen; reach for an existing token or shared class before adding a new col
   QDate for the console.
 - A `prefers-reduced-motion` block at the bottom of `app.scss` disables the decorative
   animations; new animated decoration should be added to that list.
+- **Every screen tells you when it scrolls, and `ConsoleShell` is what says so.** `.scene` gets
+  `.scene--more` / `.scene--above` from the real scroll position, and `app.scss` turns those into
+  a `mask-image` that fades the content at whichever edge has something behind it. It has to be a
+  mask: a background gradient paints *behind* the children, and these screens are wall-to-wall
+  opaque cards, so the fade landed underneath them and was never seen. The classes are set from
+  the shell rather than from each of the eleven screens — `scroll` does not bubble but it does
+  capture, so one listener on `.screen` hears whichever scene is mounted, with a `ResizeObserver`
+  and `onUpdated` to catch the heights that settle after mount.
+- **Every level can be gone back to, and it is a trail rather than a map.** `DateInvite.vue`
+  pushes the level it is leaving onto `trail` and pops it on back, so the button always returns
+  to the screen she actually came from. A fixed "previous level" map cannot do that here: the
+  setup screen only appears on the visit that asks for an address, so backing out of the question
+  would either land on a screen she never saw or refuse to move. Resuming a saved flow rebuilds
+  the trail from the level order, or she would come back on level four with no way out.
+  `ConsoleShell` draws the `‹` inside the level counter — and draws that bar at all for a level 0
+  screen that can go back, which is how the unnumbered setup screen gets one. Going back uses the
+  `warp-back` transition, which slides the other way; a back button that animates like a forward
+  one leaves her unsure the tap did anything. There is deliberately **no** way back from `win`:
+  the letter is sent by then, and a way back to the map is a way to send a second one.
+- The level counter's text is `.hud__label`, which shrinks and ellipsises, and the pips are hidden
+  under 400px. With the back button sharing that row, "LVL 3/5 · PICK THE VIBE" wrapped the whole
+  bar onto two lines, and the pips say nothing "LVL 3/5" has not already said.
 - `.warp-leave-active` is `pointer-events: none`. The outgoing screen sits over the incoming one
   at opacity 0, so without it every tap in that window lands on the level she just left — and a
   transition that never finishes (a backgrounded tab) leaves that invisible sheet there for good.

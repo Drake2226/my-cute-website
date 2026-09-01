@@ -13,7 +13,7 @@
           <p class="eyebrow">ERROR 404</p>
           <h1 class="headline">This level does not exist</h1>
           <p class="subline">Wrong cartridge. The date is back at the start.</p>
-          <router-link to="/" class="btn btn--yes lost__btn">Take me home 💗</router-link>
+          <router-link to="/os" class="btn btn--yes lost__btn">Take me home 💗</router-link>
         </div>
         <div class="screen__glass" aria-hidden="true" />
       </div>

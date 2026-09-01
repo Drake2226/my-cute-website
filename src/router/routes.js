@@ -5,15 +5,22 @@ import { vitals } from '@/lib/vitals.js'
 const TABS = ['/os/vitals', '/os/log', '/os/trends', '/os/me']
 
 const routes = [
+  // Opening the app opens the app. The invite is the thing you go and do from
+  // inside it, not the doorway you have to walk through every time — most
+  // visits are to the diary, and the question only gets asked now and then.
+  { path: '/', redirect: '/os' },
+
+  // The invite, once the front door and now a room off it. Reached from the
+  // header's 💌, from the Us tab, and from the summary when no date is planned.
   {
-    path: '/',
+    path: '/invite',
     component: () => import('@/pages/DateInvite.vue'),
   },
 
-  // Love Vitals — the app the console boots into once the invite is answered.
-  // It is a nested route rather than four flat ones so the shell (the header,
-  // the tab bar, the console cabinet) mounts once and only the page inside it
-  // swaps, which is what keeps the tab bar from flickering on every tap.
+  // Love Vitals. A nested route rather than four flat ones so the shell (the
+  // header, the tab bar, the console cabinet) mounts once and only the page
+  // inside it swaps, which is what keeps the tab bar from flickering on every
+  // tap.
   {
     path: '/os',
     component: () => import('@/pages/LoveOs.vue'),
