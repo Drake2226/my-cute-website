@@ -9,7 +9,8 @@
     </header>
 
     <!-- The countdown is the one card that is about the invite rather than the
-         diary, so it sits above everything else and only when there is a date. -->
+         diary, so it sits above everything else and only when there is a date.
+         It follows the *soonest* date, not the last one planned. -->
     <router-link v-if="nextDate" to="/os/me" class="card card--tint vitals__date">
       <span class="vitals__date-icon" aria-hidden="true">{{ nextDate.icon }}</span>
       <span class="vitals__date-body">
@@ -95,6 +96,7 @@ import {
   daysTogether,
   hasEntry,
   longDayLabel,
+  nextDate,
   ringProgress,
   seriesFor,
   streak,
@@ -103,7 +105,6 @@ import {
 
 const today = computed(() => dayEntry(dayKey()))
 const rings = computed(() => ringProgress.value)
-const nextDate = computed(() => vitals.nextDate)
 
 const greeting = computed(() => {
   const hour = new Date().getHours()

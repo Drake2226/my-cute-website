@@ -99,7 +99,11 @@ function blankState() {
     // Empty means it has never been asked, which is what makes that screen
     // appear — so erasing the vitals asks again, on purpose.
     email: '',
-    nextDate: null,
+    // Every date she has planned, oldest first. This used to be a single slot
+    // that each new invite overwrote, which meant a date planned for next month
+    // hid the one happening on Friday: the countdown followed whichever was
+    // *entered* last rather than whichever comes *next*.
+    dates: [],
     days: {},
     moments: [],
     // Where the invite was left, and which tab the app was last on. Both exist
@@ -175,11 +179,18 @@ function load() {
   }
   if (!saved || typeof saved !== 'object' || saved.schema !== SCHEMA) return fresh
 
+  // A browser that last ran the single-slot version still has `nextDate` and no
+  // `dates`. Fold it in rather than bumping the schema, which would throw the
+  // whole diary away to rescue one field.
+  const dates = Array.isArray(saved.dates) ? saved.dates : saved.nextDate ? [saved.nextDate] : []
+
   return {
     ...fresh,
     ...saved,
     days: saved.days && typeof saved.days === 'object' ? saved.days : {},
     moments: Array.isArray(saved.moments) ? saved.moments : [],
+    dates,
+    nextDate: undefined,
   }
 }
 
@@ -364,18 +375,56 @@ export const daysTogether = computed(() => {
   return diff > 0 ? Math.floor(diff / 86400000) : 0
 })
 
-// Days until the date she picked in the invite. Null when there is no date, or
-// when it has already happened.
-export const daysToDate = computed(() => {
-  const iso = vitals.nextDate?.dateIso
-  if (!iso) return null
-  const [y, m, d] = iso.split('-').map(Number)
+// Whole days from today to a YYYY-MM-DD, negative once it is behind us.
+function daysUntil(iso) {
+  const [y, m, d] = String(iso || '')
+    .split('-')
+    .map(Number)
   if (!y || !m || !d) return null
   const target = new Date(y, m - 1, d)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const diff = Math.round((target.getTime() - today.getTime()) / 86400000)
-  return diff >= 0 ? diff : null
+  return Math.round((target.getTime() - today.getTime()) / 86400000)
+}
+
+// Sorted by when they happen, which is the only order anything here cares
+// about. The array in storage is kept in this order too, but a hand-edited blob
+// does not have to be.
+const byDay = computed(() =>
+  [...vitals.dates].filter((d) => d?.dateIso).sort((a, b) => a.dateIso.localeCompare(b.dateIso)),
+)
+
+// Everything still to come, today included — a date happening this evening is
+// not over at breakfast. The explicit null check matters: `null >= 0` is true in
+// JavaScript, so an unparseable date would otherwise sort itself to the front of
+// the queue and take over the countdown.
+export const upcomingDates = computed(() =>
+  byDay.value.filter((d) => {
+    const days = daysUntil(d.dateIso)
+    return days !== null && days >= 0
+  }),
+)
+
+export const pastDates = computed(() =>
+  byDay.value.filter((d) => {
+    const days = daysUntil(d.dateIso)
+    return days !== null && days < 0
+  }),
+)
+
+// The one the countdown is about: the soonest still to come. With nothing left
+// to come it holds the most recent one instead, so the card can say that it has
+// already happened rather than vanishing the moment the day passes.
+export const nextDate = computed(
+  () => upcomingDates.value[0] ?? pastDates.value[pastDates.value.length - 1] ?? null,
+)
+
+// Days until that one. Null when there is no date at all, and null once it is
+// behind us — which is what the cards read as "already happened".
+export const daysToDate = computed(() => {
+  if (!nextDate.value) return null
+  const days = daysUntil(nextDate.value.dateIso)
+  return days !== null && days >= 0 ? days : null
 })
 
 // ---------------------------------------------------------------------------
@@ -463,16 +512,34 @@ export const badges = computed(() => {
 // The invite hands its answer over here
 // ---------------------------------------------------------------------------
 
+// Nothing prunes these, so cap the list. Fifty dates is years of them.
+const DATE_CAP = 50
+
 export function rememberDate(answer) {
   vitals.unlocked = true
-  vitals.nextDate = {
+
+  const planned = {
     dateIso: answer.dateIso,
     dateLabel: answer.dateLabel,
     dateType: answer.dateType,
     icon: answer.icon,
     place: answer.place ? { name: answer.place.name, km: answer.place.km ?? null } : null,
   }
+
+  // Planning the same day twice is a change of plan, not a second date.
+  const already = vitals.dates.findIndex((d) => d.dateIso === planned.dateIso)
+  if (already === -1) vitals.dates.push(planned)
+  else vitals.dates.splice(already, 1, planned)
+
+  vitals.dates.sort((a, b) => a.dateIso.localeCompare(b.dateIso))
+  if (vitals.dates.length > DATE_CAP) vitals.dates.splice(0, vitals.dates.length - DATE_CAP)
+
   addMoment(`Said yes to ${answer.dateType} on ${answer.dateLabel}`, answer.icon || '💌')
+}
+
+export function forgetDate(dateIso) {
+  const at = vitals.dates.findIndex((d) => d.dateIso === dateIso)
+  if (at !== -1) vitals.dates.splice(at, 1)
 }
 
 export function resetVitals() {

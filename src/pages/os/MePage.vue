@@ -60,9 +60,25 @@
     </div>
 
     <section class="section">
-      <h2 class="section__title">THE NEXT DATE</h2>
+      <h2 class="section__title">
+        <span>THE NEXT DATE</span>
+        <span v-if="laterDates.length" class="section__more">
+          +{{ laterDates.length }} AFTER IT
+        </span>
+      </h2>
 
       <div v-if="nextDate" class="card me__date">
+        <!-- Plans change, and since a new invite no longer overwrites the old
+             one this is the only way a wrong date stops hijacking the
+             countdown. Two taps, like the erase button. -->
+        <button
+          type="button"
+          class="me__drop"
+          :aria-label="`Cancel ${nextDate.dateType} on ${nextDate.dateLabel}`"
+          @click="dropDate(nextDate.dateIso)"
+        >
+          {{ dropping === nextDate.dateIso ? 'sure?' : '×' }}
+        </button>
         <p class="me__date-what">{{ nextDate.icon }} {{ nextDate.dateType }}</p>
         <p class="me__date-when">{{ nextDate.dateLabel }}</p>
         <p v-if="nextDate.place" class="me__date-where">
@@ -79,6 +95,26 @@
         No date on the books. The invite is still sitting in the cartridge slot —
         <router-link to="/">go and ask her</router-link>. 💗
       </p>
+
+      <!-- Everything queued behind the next one, soonest first. Without this the
+           extra dates would be stored and invisible. -->
+      <ul v-if="laterDates.length" class="me__queue">
+        <li v-for="date in laterDates" :key="date.dateIso" class="card me__queued">
+          <span class="me__queued-icon" aria-hidden="true">{{ date.icon }}</span>
+          <span class="me__queued-body">
+            <span class="me__queued-what">{{ date.dateType }}</span>
+            <span class="me__queued-when">{{ date.dateLabel }}</span>
+          </span>
+          <button
+            type="button"
+            class="me__drop me__drop--row"
+            :aria-label="`Cancel ${date.dateType} on ${date.dateLabel}`"
+            @click="dropDate(date.dateIso)"
+          >
+            {{ dropping === date.dateIso ? 'sure?' : '×' }}
+          </button>
+        </li>
+      </ul>
     </section>
 
     <section class="section">
@@ -146,9 +182,12 @@ import {
   allTime,
   badges,
   dayKey,
+  upcomingDates,
   daysToDate,
   daysTogether,
+  forgetDate,
   isEmailish,
+  nextDate,
   resetVitals,
   setEmail,
   streak,
@@ -184,8 +223,32 @@ watch(
   },
 )
 
-const nextDate = computed(() => vitals.nextDate)
 const earnedCount = computed(() => badges.value.filter((badge) => badge.earned).length)
+
+// Everything after the one the countdown is about.
+const laterDates = computed(() => upcomingDates.value.slice(1))
+
+// Cancelling asks once, in place, rather than through a dialog — and forgets it
+// asked if she walks away, so a half-armed × is never left live.
+const dropping = ref('')
+let dropTimer = null
+
+function dropDate(dateIso) {
+  if (dropTimer !== null) clearTimeout(dropTimer)
+
+  if (dropping.value === dateIso) {
+    dropping.value = ''
+    dropTimer = null
+    forgetDate(dateIso)
+    return
+  }
+
+  dropping.value = dateIso
+  dropTimer = setTimeout(() => {
+    dropping.value = ''
+    dropTimer = null
+  }, 4000)
+}
 
 const countdown = computed(() => {
   const days = daysToDate.value
@@ -224,6 +287,7 @@ function eraseStep() {
 
 onBeforeUnmount(() => {
   if (disarmTimer !== null) clearTimeout(disarmTimer)
+  if (dropTimer !== null) clearTimeout(dropTimer)
 })
 </script>
 
@@ -284,9 +348,83 @@ onBeforeUnmount(() => {
 }
 
 .me__date {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.me__drop {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: 2px solid rgba(74, 43, 61, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.66rem;
+  line-height: 1;
+  color: rgba(74, 43, 61, 0.6);
+  cursor: pointer;
+}
+
+.me__drop:hover {
+  border-color: var(--plum);
+  background: var(--cotton);
+  color: var(--plum);
+}
+
+.me__drop:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.me__drop--row {
+  position: static;
+  flex: none;
+}
+
+.me__queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.me__queued {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+}
+
+.me__queued-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.me__queued-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.me__queued-what {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--plum);
+}
+
+.me__queued-when {
+  font-size: 0.64rem;
+  color: rgba(74, 43, 61, 0.6);
 }
 
 .me__date-what {
