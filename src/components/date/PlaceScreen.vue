@@ -5,7 +5,7 @@
       <h1 class="headline place__headline">{{ icon }} {{ dateType }}</h1>
       <p class="place__hint">{{ hint }}</p>
 
-      <button v-if="searchFailed && !busy" class="place__retry" @click="runSearch()">
+      <button v-if="searchFailed && !busy" class="place__retry" @click="runSearch({ force: true })">
         ↻ SEARCH AGAIN
       </button>
 
@@ -45,6 +45,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { sendAnswer } from '@/config.js'
 import { CATEGORIES, describePoint, distanceKm, findNearby, formatDistance } from '@/lib/places.js'
+import { warmFix } from '@/lib/warmup.js'
 
 const props = defineProps({
   dateLabel: { type: String, required: true },
@@ -405,7 +406,7 @@ async function pickPoint(latlng) {
  * `quiet` is for those automatic refreshes: no veil over the map and no
  * refitting the view, because she is mid-choice and did not ask for either.
  */
-async function runSearch({ quiet = false } = {}) {
+async function runSearch({ quiet = false, force = false } = {}) {
   const me = userMarker?.getLatLng()
   if (!props.category || !me || searching) return
 
@@ -428,6 +429,9 @@ async function runSearch({ quiet = false } = {}) {
       props.category,
       { lat: me.lat, lng: me.lng },
       abort.signal,
+      // She asked for this one out loud, so it goes past the quiet window that
+      // stops automatic searches repeating a failure.
+      { force },
     )
     if (!alive) return
 
@@ -521,6 +525,17 @@ async function startLocating() {
     return null
   }
 
+  // A fix taken while the app was opening, if permission was already granted
+  // then. It skips the whole "FINDING YOU" wait on the level she is looking at,
+  // and the watch below still runs, so a sharper reading replaces it the moment
+  // one arrives. Nothing changes on a first visit: warmup only collects a fix
+  // that was already permitted, never asks for one.
+  const early = warmFix()
+  if (early) {
+    startWatching()
+    return early
+  }
+
   let fix = await askOnce({
     enableHighAccuracy: true,
     timeout: FIRST_FIX_TIMEOUT_MS,
@@ -541,6 +556,9 @@ async function startLocating() {
   return fix
 }
 
+// Error codes already complained about, so a failing watch says each once.
+const watchComplaints = new Set()
+
 /** Subscribe to sharper readings, replacing whatever watch was running. */
 function startWatching() {
   if (!navigator.geolocation) return
@@ -551,7 +569,14 @@ function startWatching() {
       const next = toFix(pos)
       if (worthTaking(next)) applyFix(next, { center: !currentFix })
     },
-    (err) => console.warn(`[love-machine] Location watch (${err.code}):`, err.message),
+    (err) => {
+      // watchPosition re-reports the same failure every time it retries, so a
+      // phone that cannot get a lock fills the console with identical lines and
+      // buries anything worth reading. Say each kind once.
+      if (watchComplaints.has(err.code)) return
+      watchComplaints.add(err.code)
+      console.warn(`[love-machine] Location watch (${err.code}):`, err.message)
+    },
     { enableHighAccuracy: true, timeout: FIRST_FIX_TIMEOUT_MS, maximumAge: 0 },
   )
 }

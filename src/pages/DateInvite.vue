@@ -59,6 +59,7 @@ import {
   setEmail,
   vitals,
 } from '@/lib/vitals.js'
+import { warmSearch } from '@/lib/warmup.js'
 
 const LEVELS = {
   boot: { n: 0, label: '' },
@@ -150,6 +151,10 @@ function onPickVibe({ dateType, icon, category }) {
   answer.dateType = dateType
   answer.icon = icon
   answer.category = category
+  // The one search she is going to need, started as she picks it rather than
+  // when the map appears. The map level asks for the same thing a moment later
+  // and joins this request instead of making a second one.
+  warmSearch(category)
   goTo('place')
 }
 

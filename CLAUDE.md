@@ -107,6 +107,75 @@ a dev-only setup banner (`import.meta.env.DEV`). `PlaceScreen.vue` is the only c
 is the last thing picked — and it awaits the send before emitting `done`, so a rejection keeps
 the user on the map with a retry rather than advancing to the win screen.
 
+**The map level's waiting is done before she gets there** (`src/lib/warmup.js`). It used to start
+from nothing — download Leaflet, ask where she is, ask a server what is nearby — three waits end
+to end, all beginning on the tap that opened the level. Now `App.vue` pulls Leaflet down while
+the splash is up, and `onPickVibe` starts the one search she is going to need as she picks it, behind a `preconnect`
+for the tile and Overpass hosts. Leaflet waits on `document.fonts.ready` before it downloads: it
+is 145 KB against the splash's own 120 KB of fonts, and fetching it first would make the splash
+last longer to save time she has not asked for yet. In
+a stubbed measurement, pins land ~0.5s sooner and the search begins 118ms after the tap instead
+of 687ms; on a real phone the saving is larger, because the pre-taken fix skips "FINDING YOU"
+entirely.
+
+Three rules hold that together, and undoing any of them does real damage:
+
+- **Only the category she picked is warmed, never all nine.** The wide ones scan a 25 km circle,
+  and firing nine at free servers in one breath is the exact burst that earns a 429 for everybody.
+- **`warmLocation()` only collects a fix if permission is already `granted`.** An ungranted
+  `getCurrentPosition` at app start puts the browser's prompt in front of her before she has asked
+  for anything — and on iOS a denial there is final, with nothing on the page able to raise it
+  again, which would break the map level for good. Asking is still the level's job, on the tap
+  that opened it.
+- **A mirror must be proven to hold the whole planet, not merely to answer.** `overpass.osm.ch`
+  is the Swiss chapter's instance and holds only Switzerland: it returned 200 in about two
+  seconds with an empty `elements` array for everywhere else on earth, beat the slower planet
+  servers, and had the level telling a city of 250,000 that it had no cinemas. A server that is
+  down announces itself; one that confidently answers "nothing" does not.
+  `node scripts/check-overpass.mjs` is the gate — it asks each candidate for cafés in Manila
+  *and* Zurich, and a real instance finds plenty of both.
+- **An empty answer needs corroboration.** `askTheServers` no longer returns on the first server
+  to say zero: it keeps asking while anyone is left who might disagree, and only reports nothing
+  when everyone who answered agrees. That is what makes the failure above impossible rather than
+  merely documented, and it costs an extra request only on searches that genuinely find nothing.
+- **A stalled server gets overtaken, not waited out.** `askTheServers` starts one endpoint, and
+  if nothing has come back in `HEDGE_MS` (3.5s) it asks the next one *alongside* it rather than
+  after it — first answer wins, the rest are cancelled. Strict one-at-a-time cost the full request
+  timeout whenever the front of the list was merely slow: twelve seconds of nothing on a level
+  whose veil lifts at nine. Measured with a stubbed server hanging for 11s and a healthy mirror
+  behind it, pins went from ~12.8s to 4.7s; a server that answers promptly is still the only one
+  asked. Racing all four from the start is the burst that gets the address banned — the delay is
+  the whole point.
+- A cancelled attempt is marked `overtaken`, and that flag is why it is neither benched nor listed
+  as a refusal: it was not asked to finish, so it said nothing about itself.
+- The bench lengths are graded by what went wrong: 429 gets `Retry-After` or five minutes, a 5xx
+  gets three (the server is in trouble, and that lasts minutes), a timeout or refused connection
+  gets one — that last one might be this phone's signal rather than the server, and benching a
+  good server over a moment of bad wifi is the worse mistake.
+- **`findNearby` joins a search already in flight** (`inFlight`) instead of starting a second one,
+  and **remembers a total failure for 15 seconds** (`failedAt`). Without the first, the head start
+  would cost a duplicate query rather than save a wait; without the second, a moment when every
+  server is refusing got all four asked twice in a row. The retry button passes `force` and
+  ignores both, because she asked for that one out loud.
+
+**The map has two place providers, and which one runs depends on a key.** `askForPlaces()` tries
+**Geoapify** first when `GEOAPIFY_KEY` in `src/config.js` has been filled in, and falls through to
+the Overpass mirrors when it has not — or when Geoapify refuses. Same OpenStreetMap data either
+way; the difference is that Geoapify's servers are paid for and Overpass's are donated, which is
+why the free ones answer 429 and 504 as often as they do.
+
+- A Geoapify failure is a **fall-through, not an error**. Wrong key, spent quota, or a category id
+  that does not exist all return null and the Overpass path runs. The level must never end up
+  worse off for having a key configured.
+- The `geo` ids on each entry in `CATEGORIES` were written from Geoapify's documented taxonomy,
+  **not confirmed against a live key** — there was none to test with. If one is wrong, that single
+  category quietly uses Overpass instead. Worth checking against real results once a key is in.
+- Geoapify's circle filter has a radius ceiling (`GEOAPIFY_MAX_RADIUS_M`), and theme parks search
+  wider than that at 60 km. That one is clamped and leans on Overpass for its outer range.
+- Everything around the providers is shared: the five-minute result cache, the in-flight join, the
+  fifteen-second failure window, `rankFrom` and `dropDuplicates` all sit in `findNearby`, above
+  whichever provider answered.
+
 **The map level (`PlaceScreen.vue` + `src/lib/places.js`) is the one piece with a network
 dependency.** `VibeScreen`'s `OPTIONS` carry a `spot` key naming a category in `CATEGORIES`;
 an empty `spot` (picnic, nature walk, road trip) means "no list to search, tap the map instead."
@@ -152,6 +221,16 @@ Two details there are load-bearing and easy to undo by accident:
   endpoint fails, as a single warning with the list attached. A `console.warn` per fallback reads
   like a broken app on a level that is working exactly as designed, which is how the noise gets
   mistaken for the bug.
+- **Narrow on the way out, not in the query, when the narrowing key is a common one.** The
+  churches category used to ask for `amenity=place_of_worship + religion=christian` *and*
+  `building~(church|cathedral|chapel)`, because plenty of churches carry no religion tag. Matching
+  on `building` means scanning every building in the circle: measured over 25 km around Tacloban
+  that query **never finished**, at either 60s or 90s. Asking for every `amenity=place_of_worship`
+  instead takes 2.1s and finds *more* (105 named against 81), and the `keep` predicate on the
+  category then drops anything explicitly tagged as another religion — free, on data already in
+  hand. `[building=hotel]` went the same way: 3.5s against 1.9s for one extra hotel in 142.
+  If a selector exists to catch things a cheaper one misses, check whether the cheaper one can
+  simply be widened and sifted afterwards.
 - `findNearby()` returns `{ places, ok }`, where `ok: false` means **no server answered** — as
   opposed to a town that genuinely has no cinemas. `PlaceScreen` needs the difference to choose
   between "No X nearby" and "The map search did not answer" plus a retry button. Collapsing it

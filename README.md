@@ -33,6 +33,26 @@ Everything it remembers lives in the browser's own storage on her phone: nothing
 uploaded, there is no account, and no server ever sees it. The other side of that coin
 is that clearing the browser's data clears the diary too.
 
+## Making the map reliable (optional)
+
+Out of the box the map asks the free, shared Overpass servers — the same ones the
+whole internet uses. They answer often enough to be useful and refuse often enough
+to be annoying, and when they all refuse the level falls back to "tap the map
+yourself", which still works but is not the nice version.
+
+To fix that, put a **Geoapify** key in `src/config.js`:
+
+1. Sign up at [geoapify.com](https://www.geoapify.com/) — email only, no card.
+2. Create a project and copy its API key.
+3. Paste it over `YOUR_GEOAPIFY_KEY` in `src/config.js`.
+4. In their dashboard, restrict the key to your own domain. It is visible in browser
+   code, exactly like the EmailJS key, and that restriction is what stops anyone else
+   spending your allowance.
+
+The free tier is a few thousand requests a day, far more than this will use. It is the
+same OpenStreetMap data, just served properly. Leave the key alone and nothing breaks —
+the map carries on with Overpass.
+
 ## The map level
 
 Level 4 asks the browser for her location, drops her on a
