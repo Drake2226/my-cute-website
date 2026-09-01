@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
+**Meet Cute** is the product; **LOVE-MACHINE 3000** is the machine. The brand name is what the
+outside world sees — the home-screen label, the manifest, the browser tab, the icon — and the
+model name stays engraved on the plastic plate at the top of the cabinet, the way real hardware
+carries both. Renaming one is not renaming the other.
+
 LOVE-MACHINE 3000 — a single-page Quasar (Vue 3 + Vite) app that renders a pink retro
 handheld console asking one question ("Will you go on a date with me?"), then emails the
 answer as a designed letter. Once she has answered, the same console runs **Love Vitals**: a
@@ -161,9 +166,21 @@ and manifest under `src-pwa/`, and that folder carries **its own `package.json`*
 a root dependency, so a plain `npm ci` does not install it and the PWA build fails looking for
 `workbox-build`. The deploy workflow runs `npm ci` twice for that reason.
 
-- `src-pwa/manifest.json` is the app's identity: `standalone` display, the pink `#ffe3ef` theme,
-  two `any maskable` icons (the boot screen's pixel heart, drawn inside the 60% safe zone so
-  Android's mask cannot clip it), and two shortcuts into `#/os/log` and `#/os/vitals`.
+- `src-pwa/manifest.json` is the app's identity: the name **Meet Cute**, `standalone` display,
+  the pink `#ffe3ef` theme, and two shortcuts into `#/os/log` and `#/os/vitals`.
+- **The icons come in three kinds, and the difference is load-bearing.** `scripts/make-icons.mjs`
+  builds them all from `public/icons/icon-512x512.png` (the supplied badge artwork) using the
+  same headless Chrome that drives the app. *Plain* keeps the artwork's transparent margins, for
+  tabs and the manifest's default icons. *Maskable* is a separate drawing — badge shrunk into the
+  middle 66% of a solid `#ff5fa2` square — because Android clips an adaptive icon to its own
+  shape and anything relying on transparent corners loses its edges; declaring the plain icons
+  `any maskable`, which an earlier version did, is exactly the mistake that crops the badge.
+  *Apple* is opaque for the same reason in reverse: iOS composites a transparent touch icon onto
+  black, which puts black corners around a pink badge.
+- Safari pinned tabs take a one-colour **mask**, not a picture, so the badge cannot serve there —
+  `safari-pinned-tab.svg` is a plain heart. Quasar injects its own `mask-icon` link coloured with
+  the manifest theme, a pale blush that vanishes on the tab strip, so `index.html` writes one
+  first in the badge pink and the first one wins.
 - `start_url` and `scope` are `"."`, not `"/"`. The production build is served from
   `/my-cute-website/` on GitHub Pages, and an absolute `/` would put the scope above the app.
 - The worker takes over immediately (`skipWaiting` + `clientsClaim`). There is no long-lived

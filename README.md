@@ -208,6 +208,7 @@ pnpm run lint:check  # check only
 - `src/lib/vitals.js` - the diary: the metrics, the streak, and what goes in storage.
 - `src/pages/os/*.vue` - one file per tab of Love Vitals.
 - `src-pwa/manifest.json` - the app's name, icon and colours when it is installed.
+- `public/icons/` - the Meet Cute badge at every size, built by `node scripts/make-icons.mjs`.
 - `src/lib/places.js` — which places each date type looks for, and how far away.
 - `src/css/app.scss` — palette, type, buttons, animations, QDate and Leaflet restyling.
 #   m y - c u t e - w e b s i t e  

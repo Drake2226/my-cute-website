@@ -138,7 +138,7 @@ function onRestart() {
 const RESUMABLE = new Set(['ask', 'day', 'vibe', 'place'])
 
 onMounted(() => {
-  document.title = 'A date with you 💕'
+  document.title = 'Meet Cute 💕'
 
   // Installed apps get closed by being switched away from, not by being
   // finished. Picking the question back up where she left it is the difference

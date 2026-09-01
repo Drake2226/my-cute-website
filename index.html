@@ -35,9 +35,16 @@
          already injects.
 
          This one stays because Quasar's injected home-screen title is the
-         manifest `name`, "LOVE-MACHINE 3000", which iOS truncates to about
-         twelve characters. This tag comes first, and the first one wins. -->
-    <meta name="apple-mobile-web-app-title" content="Love Machine" />
+         manifest `name`, "Meet Cute — Real Connections", and iOS truncates a
+         home-screen label at about twelve characters. This tag comes first,
+         and the first one wins. -->
+    <meta name="apple-mobile-web-app-title" content="Meet Cute" />
+
+    <!-- Safari pinned tabs take a one-colour mask, not a picture, so the badge
+         cannot be used here. Quasar injects a mask-icon too, but colours it
+         with the manifest's theme colour — a pale blush that all but vanishes
+         on Safari's tab strip. This one is the badge pink and comes first. -->
+    <link rel="mask-icon" href="icons/safari-pinned-tab.svg" color="#ff5fa2" />
   </head>
   <body>
     <!-- quasar:entry-point -->
