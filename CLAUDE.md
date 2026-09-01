@@ -54,6 +54,20 @@ but it only holds the untouched scaffold; do not introduce a store for flow stat
 HUD pips, and renders the active screen through a `<slot>`. Every screen's root element carries
 the shared `.scene` class (defined in `app.scss`) so it fills the screen area consistently.
 
+**The countdown follows the soonest date, not the newest.** `vitals.dates` is a list, kept
+sorted by day; `nextDate` is a computed that picks the first one still to come, and everything
+after it queues on the Us page. It used to be a single slot that each finished invite overwrote,
+which meant planning something for next month hid the date happening on Friday. Two consequences
+worth keeping in mind:
+
+- Planning the same `dateIso` twice **replaces** it rather than adding a second one — that is a
+  change of plan, not two dates.
+- Because a new invite no longer overwrites the old one, a mistake would otherwise be permanent.
+  That is what the two-tap × on the Us page is for; it is not decoration.
+- A browser last used before this change still has the single `nextDate` in storage. `load()`
+  folds it into `dates` and drops the key. Bumping `SCHEMA` instead would have thrown away the
+  whole diary to rescue one field.
+
 **The letter's address is asked for, not compiled in.** `MailScreen.vue` sits between the boot
 screen and the question and asks which inbox to post the answer to. It is a **level 0** entry in
 the `LEVELS` map, like `boot`: numbering it would make the counter read "1/6" on the one visit
@@ -109,6 +123,25 @@ Two details there are load-bearing and easy to undo by accident:
   into separate selectors, or adding relations to cafés, multiplies the scans and the query stops
   coming back at all. Public Overpass servers also throttle hard: a burst of wide queries from one
   IP gets 429s, then 504s, then refused connections for a while, so test these sparingly.
+  Three things soften that, and all three matter: there are **four** endpoints rather than two;
+  a server that answers 429 is **benched** (`coolingOff`, five minutes, or whatever its
+  `Retry-After` asks for — a 504 or a timeout earns one minute) so the next search skips straight
+  past it; and successful answers are **cached for five minutes** against the category and a
+  centre rounded to three decimals. That cache is not an optimisation, it is load control:
+  `PlaceScreen` re-searches quietly every time the GPS fix sharpens, so standing still with a
+  drifting fix was enough to earn a rate-limit on its own. If every endpoint is benched,
+  `endpointsToTry()` returns the whole list anyway — a cooldown is a guess about somebody else's
+  server, and a wrong guess must never be the reason a search fails.
+  Distances are applied on the way out (`rankFrom`) rather than stored with the result, because a
+  cached answer gets reused from a slightly different spot. The bench is written to
+  `localStorage` under `love-machine-overpass-coolof-v1`, because a throttle outlasts a page: she
+  may open the level several times inside one, and without it the first search of every visit
+  pays the full timeout of a server already known to be refusing.
+- **A refused endpoint is not logged; a failed search is.** One mirror answering 429 is routine —
+  that is what the other three are for — so refusals are collected and only spoken about if every
+  endpoint fails, as a single warning with the list attached. A `console.warn` per fallback reads
+  like a broken app on a level that is working exactly as designed, which is how the noise gets
+  mistaken for the bug.
 - `findNearby()` returns `{ places, ok }`, where `ok: false` means **no server answered** — as
   opposed to a town that genuinely has no cinemas. `PlaceScreen` needs the difference to choose
   between "No X nearby" and "The map search did not answer" plus a retry button. Collapsing it

@@ -119,14 +119,99 @@ const REQUEST_TIMEOUT_MS = 12000
 // this, so the wait happens over a usable map rather than behind a curtain.
 const WIDE_TIMEOUT_MS = 22000
 
-// Tried in order until one answers. The main server is the canonical one; the
-// second is a public mirror, run by VK, that sees the search coordinates when
-// the first is down. Delete that line if you would rather it never be asked —
-// the level still works, it just falls back to picking the spot by hand.
+// Tried in order until one answers. The first is the canonical server; the rest
+// are public mirrors, and every one of them sees the search coordinates when it
+// is asked. Delete any line you would rather never be asked — the level still
+// works with none of them, it just falls back to picking the spot by hand.
+//
+// There are four because two was not enough. These are free, shared servers: a
+// run of searches from one address earns a 429 from the busiest of them, and
+// the next one along is often mid-timeout at the same moment. Each extra mirror
+// is another chance that somebody answers before she gives up.
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
+
+// How long a server that just turned us away is left alone for. A 429 is the
+// server saying so in as many words, so it earns the longer bench; a timeout or
+// a 504 is more likely a passing overload.
+const COOL_OFF_RATE_MS = 5 * 60 * 1000
+const COOL_OFF_BUSY_MS = 60 * 1000
+const COOL_OFF_MAX_MS = 10 * 60 * 1000
+
+// endpoint -> the time it is worth asking again. Module-level, so it survives
+// the level unmounting: the next search should not have to rediscover that the
+// first server is still rate-limiting this address.
+const coolingOff = new Map()
+
+// ...and written down, so a reload does not rediscover it either. A throttle
+// lasts minutes and she may open the level several times inside one; without
+// this, the first search of every visit pays the full timeout of a server that
+// is known to be turning us away.
+const COOL_OFF_KEY = 'love-machine-overpass-coolof-v1'
+
+function saveCoolOffs() {
+  try {
+    localStorage.setItem(COOL_OFF_KEY, JSON.stringify(Object.fromEntries(coolingOff)))
+  } catch {
+    // Private browsing, or a full disk. Forgetting is only a lost optimisation.
+  }
+}
+
+function loadCoolOffs() {
+  let saved
+  try {
+    saved = JSON.parse(localStorage.getItem(COOL_OFF_KEY) || '{}')
+  } catch {
+    return
+  }
+  if (!saved || typeof saved !== 'object') return
+
+  const now = Date.now()
+  for (const [endpoint, until] of Object.entries(saved)) {
+    // Only endpoints still on the list, only benches still running, and never
+    // longer than the cap — a stale or hand-edited entry must not be able to
+    // sideline a server for a week.
+    if (OVERPASS_ENDPOINTS.includes(endpoint) && typeof until === 'number' && until > now) {
+      coolingOff.set(endpoint, Math.min(until, now + COOL_OFF_MAX_MS))
+    }
+  }
+}
+
+loadCoolOffs()
+
+function benchEndpoint(endpoint, ms) {
+  coolingOff.set(endpoint, Date.now() + Math.min(ms, COOL_OFF_MAX_MS))
+  saveCoolOffs()
+}
+
+function clearBench(endpoint) {
+  if (coolingOff.delete(endpoint)) saveCoolOffs()
+}
+
+/**
+ * The endpoints worth asking right now, in order.
+ *
+ * If every one of them is benched the whole list comes back anyway. A cooldown
+ * is a guess about somebody else's server, and a wrong guess must never be the
+ * reason a search fails — better a wasted request than a map that refuses to
+ * look.
+ */
+function endpointsToTry() {
+  const now = Date.now()
+  const ready = OVERPASS_ENDPOINTS.filter((e) => (coolingOff.get(e) ?? 0) <= now)
+  return ready.length ? ready : OVERPASS_ENDPOINTS
+}
+
+/** Seconds from a Retry-After header, when the server bothered to send one. */
+function retryAfterMs(res) {
+  const raw = res.headers.get('retry-after')
+  const seconds = Number(raw)
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : COOL_OFF_RATE_MS
+}
 
 /**
  * A signal that gives up on its own, but still obeys the caller's. Leaving the
@@ -224,6 +309,57 @@ function buildQuery(selectors, center, radiusM, areas) {
   return `[out:json][timeout:25];\n(\n${body}\n);\nout center ${OVERPASS_OUT_CAP};`
 }
 
+// ---------------------------------------------------------------------------
+// Remembering a search
+//
+// The level asks for the same thing more than once — PlaceScreen re-searches
+// whenever the fix sharpens — and these are free servers being asked a 25 km
+// question. Answers are kept for a few minutes, keyed by category and a rounded
+// centre.
+// ---------------------------------------------------------------------------
+
+const SEARCH_TTL_MS = 5 * 60 * 1000
+const SEARCH_CACHE_MAX = 20
+
+// Three decimals is a little over a hundred metres. Move further than that and
+// the question is genuinely different, which is exactly when a sharper fix
+// deserves a fresh answer rather than the old one.
+function searchKey(categoryKey, center, radiusM) {
+  return `${categoryKey}|${center.lat.toFixed(3)}|${center.lng.toFixed(3)}|${radiusM}`
+}
+
+const searchCache = new Map()
+
+function cachedSearch(categoryKey, center, radiusM) {
+  const hit = searchCache.get(searchKey(categoryKey, center, radiusM))
+  return hit && Date.now() - hit.at < SEARCH_TTL_MS ? hit.found : null
+}
+
+function rememberSearch(categoryKey, center, radiusM, found) {
+  searchCache.set(searchKey(categoryKey, center, radiusM), { at: Date.now(), found })
+  // Oldest first out. Nothing here is worth more than anything else, and the
+  // map only ever needs the last handful.
+  while (searchCache.size > SEARCH_CACHE_MAX) {
+    searchCache.delete(searchCache.keys().next().value)
+  }
+}
+
+/**
+ * Measure a set of places from where she is now, nearest first.
+ *
+ * Distance is not stored with the result, it is applied on the way out: a
+ * cached answer is reused from a slightly different spot, and `dropDuplicates`
+ * relies on the list already being sorted nearest-first to keep the closest
+ * copy of a place that arrived three times over.
+ */
+function rankFrom(center, found, max) {
+  const measured = found
+    .map((place) => ({ ...place, km: distanceKm(center, place) }))
+    .sort((a, b) => a.km - b.km)
+
+  return dropDuplicates(measured).slice(0, max)
+}
+
 /**
  * Named places of one category around a point, nearest first.
  *
@@ -238,9 +374,23 @@ export async function findNearby(categoryKey, center, signal) {
   if (!category) return { places: [], ok: true }
 
   const { radiusM, max, timeoutMs } = rangeFor(category)
+
+  // An answer from a minute ago about the same corner of the world is still the
+  // right answer, and the level asks more than once: PlaceScreen re-searches
+  // quietly whenever the GPS fix sharpens. Without this, standing still with a
+  // drifting fix is enough to earn a rate-limit on its own.
+  const cached = cachedSearch(categoryKey, center, radiusM)
+  if (cached) return { places: rankFrom(center, cached, max), ok: true }
+
   const query = buildQuery(category.selectors, center, radiusM, category.areas)
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
+  // One mirror refusing is routine — that is what the other three are for — so
+  // the attempts are collected and only spoken about if every one of them
+  // fails. A console warning per fallback reads like a broken app on a level
+  // that is working exactly as designed.
+  const refusals = []
+
+  for (const endpoint of endpointsToTry()) {
     const limit = timeLimited(signal, timeoutMs)
 
     try {
@@ -251,9 +401,11 @@ export async function findNearby(categoryKey, center, signal) {
         signal: limit.signal,
       })
       if (!res.ok) {
-        // 429 means the shared server is busy with someone else; the mirror
-        // usually is not. Worth saying out loud when a search comes back empty.
-        console.warn(`[love-machine] ${endpoint} answered ${res.status}`)
+        // 429 is the server saying "not you, not now" — asking it again in ten
+        // seconds only digs the hole deeper, so it goes on the bench and the
+        // next mirror gets the question.
+        benchEndpoint(endpoint, res.status === 429 ? retryAfterMs(res) : COOL_OFF_BUSY_MS)
+        refusals.push(`${endpoint} answered ${res.status}`)
         continue
       }
 
@@ -271,25 +423,31 @@ export async function findNearby(categoryKey, center, signal) {
             address: addressFromTags(tags),
             lat: point.lat,
             lng: point.lon,
-            km: distanceKm(center, { lat: point.lat, lng: point.lon }),
           }
         })
         .filter(Boolean)
-        .sort((a, b) => a.km - b.km)
 
-      const places = dropDuplicates(found).slice(0, max)
+      // It answered, so whatever it was busy with is over.
+      clearBench(endpoint)
+      rememberSearch(categoryKey, center, radiusM, found)
 
-      return { places, ok: true }
+      return { places: rankFrom(center, found, max), ok: true }
     } catch (err) {
       // Only the caller leaving the level should stop the search; a server
       // that timed out or refused just means it is the next one's turn.
       if (signal?.aborted) throw err
-      console.warn(`[love-machine] ${endpoint} did not answer:`, err.message)
+      benchEndpoint(endpoint, COOL_OFF_BUSY_MS)
+      refusals.push(`${endpoint} did not answer (${err.message})`)
     } finally {
       limit.done()
     }
   }
 
+  console.warn(
+    '[love-machine] No Overpass server answered, so there are no pins to show. ' +
+      'She can still pick the spot by tapping the map.',
+    refusals,
+  )
   return { places: [], ok: false }
 }
 
