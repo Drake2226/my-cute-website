@@ -6,15 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LOVE-MACHINE 3000 — a single-page Quasar (Vue 3 + Vite) app that renders a pink retro
 handheld console asking one question ("Will you go on a date with me?"), then emails the
-answer as a designed letter. There is no backend and no test suite; the built output is
-plain static files in `dist/spa`.
+answer as a designed letter. Once she has answered, the same console runs **Love Vitals**: a
+health-app-shaped diary of the relationship (rings, trends, moments, badges) living at `/#/os`.
+There is no backend and no test suite. It ships as an **installable PWA**: the built output is
+plain static files in `dist/pwa` with a service worker and a manifest, and every byte of state it
+keeps — the diary, where the invite was left, which tab was last open — is in the browser's
+`localStorage`. Nothing about it needs a server once it has been opened once.
 
 ## Commands
 
 ```bash
 npm install          # a package-lock.json is committed, despite the README saying pnpm
+npm install --prefix src-pwa   # Workbox + the SW registrar; the PWA build needs these
+
 npx quasar dev       # dev server, opens a browser automatically (devServer.open)
-npx quasar build     # -> dist/spa
+npm run dev:pwa      # same, with the service worker running — how to test offline
+npm run build        # -> dist/pwa  (PWA: this is what gets deployed)
+npm run build:spa    # -> dist/spa  (no service worker, no manifest, not installable)
 npm run lint         # prettier --write, then eslint --fix
 npm run lint:check   # check only
 ```
@@ -24,9 +32,11 @@ so ESLint errors surface in the dev build output.
 
 ## Architecture
 
-**One route, six "levels."** `src/router/routes.js` maps `/` to `src/pages/DateInvite.vue`;
-everything else is a 404. `DateInvite.vue` is the only stateful component: a `step` ref
-(`boot | ask | day | vibe | place | win`) selects which `*Screen.vue` renders inside a
+**Two routes: the invite, and the app behind it.** `src/router/routes.js` maps `/` to
+`src/pages/DateInvite.vue` and `/os/*` to the Love Vitals tabs (see below); everything else is a 404.
+
+**The invite is six "levels."** `DateInvite.vue` is the only stateful component: a `step` ref
+(`boot | mail | ask | day | vibe | place | win`) selects which `*Screen.vue` renders inside a
 `<Transition name="warp">`, and a `reactive` `answer` object accumulates `dateIso`, `dateLabel`,
 `dateType`, `icon`, `category` and `place` as screens emit upward. The `LEVELS` map drives the
 HUD counter, and `BLANK` is the shape `onRestart()` resets to when the win screen times out.
@@ -38,6 +48,25 @@ but it only holds the untouched scaffold; do not introduce a store for flow stat
 **`ConsoleShell.vue` is chrome only.** It draws the plastic cabinet, screws, screen glass and
 HUD pips, and renders the active screen through a `<slot>`. Every screen's root element carries
 the shared `.scene` class (defined in `app.scss`) so it fills the screen area consistently.
+
+**The letter's address is asked for, not compiled in.** `MailScreen.vue` sits between the boot
+screen and the question and asks which inbox to post the answer to. It is a **level 0** entry in
+the `LEVELS` map, like `boot`: numbering it would make the counter read "1/6" on the one visit
+that shows it and "1/5" on every visit afterwards, because `onStart()` skips straight to `ask`
+once `hasEmail` is true. It is never shown twice — the Us page is where it is changed after that.
+
+`RECIPIENT_EMAIL` in `src/config.js` is now the *fallback and the suggestion*, not the
+destination: `recipientEmail()` prefers `vitals.email` and `letterParams()` calls it at send
+time, so an address edited on the Us page an hour ago is the one the next letter goes to.
+`isEmailish()` is deliberately loose — the only real test of an address is whether mail arrives,
+and a strict pattern's failure mode is rejecting a good address on the one screen standing
+between her and the question.
+
+The Us page edits that address through a **draft**, committing only when the draft is a whole
+address. Writing every keystroke straight to storage would mean a half-typed one fails
+`hasEmail`, and the setup screen would reappear on the next boot as though it had never been
+answered. The note under the box is the only thing that says whether an edit took, since there
+is no save button.
 
 **`src/config.js` is both user-facing config and the send layer.** It exports the recipient
 address, the letter's prose (`LOVE_NOTE`, `LOVE_NOTE_2`, `CLOSING_LINE`), the EmailJS/Formspree
@@ -127,21 +156,109 @@ Two details there are load-bearing and easy to undo by accident:
   failed but pins are already displayed. A background refresh that cannot reach a server must
   leave the existing results alone rather than blanking a map she is in the middle of using.
 
+**It installs, so it has to survive being closed.** `quasar mode add pwa` put the service worker
+and manifest under `src-pwa/`, and that folder carries **its own `package.json`** — Workbox is not
+a root dependency, so a plain `npm ci` does not install it and the PWA build fails looking for
+`workbox-build`. The deploy workflow runs `npm ci` twice for that reason.
+
+- `src-pwa/manifest.json` is the app's identity: `standalone` display, the pink `#ffe3ef` theme,
+  two `any maskable` icons (the boot screen's pixel heart, drawn inside the 60% safe zone so
+  Android's mask cannot clip it), and two shortcuts into `#/os/log` and `#/os/vitals`.
+- `start_url` and `scope` are `"."`, not `"/"`. The production build is served from
+  `/my-cute-website/` on GitHub Pages, and an absolute `/` would put the scope above the app.
+- The worker takes over immediately (`skipWaiting` + `clientsClaim`). There is no long-lived
+  in-page state a swap could strand — the diary is on disk — and the alternative is a redeploy
+  that never reaches a phone whose tab is never closed.
+- Only map tiles get runtime caching, on a short leash (120 entries, a week). The fonts are
+  bundled instead, for the reason in the styling notes; Overpass and Nominatim are never cached,
+  because a stale answer to "what is near me" is worse than no answer.
+- `index.html` carries no `apple-mobile-web-app-capable`: it is deprecated, Chrome warns about it
+  in the console, and every iOS since 16.4 reads the unprefixed `mobile-web-app-capable` that
+  Quasar injects. The only tag written by hand there is `apple-mobile-web-app-title`, because
+  Quasar's injected one is the manifest `name` and iOS truncates a home-screen label at about
+  twelve characters.
+- `src/lib/install.js` registers the `beforeinstallprompt` listener **at import time**, and
+  `App.vue` imports it for that side effect alone. The event fires once, early, and unprompted:
+  anything that starts listening when a page mounts has already missed it. It is parked in a ref
+  so `InstallCard.vue` on the Us page can offer the prompt as part of the app instead of letting
+  Chrome drop its own bar over the console art. iOS has no such API at all, so that card falls
+  back to naming the share-sheet steps.
+
+**Closing the app is not the same as finishing it.** Two things in `vitals.js` exist only for
+that: `flow` remembers which level the invite was on (with the answer so far) and `lastTab`
+remembers which tab the app was on. `DateInvite.vue` still owns its own state — the project rule
+that flow state never moves into a store has not changed — and only mirrors it, restoring on
+mount if the copy is under twelve hours old. Only `ask`/`day`/`vibe`/`place` are resumable:
+`boot` has nothing to resume, and `win` is over, since the letter is already sent and the answer
+is already in her vitals. The `/os` redirect reads `lastTab` through a whitelist, because a
+hand-edited blob in localStorage must not be able to aim a redirect anywhere it likes.
+
 **The email template is a contract.** Every `{{placeholder}}` in `email/letter-template.html`
 must have a matching key in `letterParams()` in `src/config.js`. That HTML is pasted by hand
 into the EmailJS dashboard — it is not bundled or imported — so changing one side requires
 re-pasting the other.
 
-Two `letterParams()` keys have no placeholder in that HTML because they fill dashboard *fields*
+Two `letterParams()` keys have no placeholder in that HTML because they fill dashboard _fields_
 instead: `to_email` (the template's To) and `copy_email` (its Bcc, the `COPY_TO_EMAIL` copy of
 the letter). Neither is visible in the repo, so a missing Bcc field looks exactly like a working
 send that quietly drops the copy. The Bcc route is deliberate over a second `emailjs.send()`:
 `lockItIn()` retries the whole send on failure, and two calls would let a retry deliver her
 letter twice.
 
+**The other half of the cartridge: Love Vitals (`/#/os`).** The invite is still the entry — `/`
+is unchanged, and a first visit is still the one question it always was. Once she has answered
+it, the console also runs a small health-app-shaped diary of the relationship: four metrics
+(crush level, butterflies, time together, kisses), a mood, freeform "moments", rings, trends and
+badges. `src/pages/LoveOs.vue` is its shell and `src/pages/os/*.vue` are the four tabs
+(`VitalsPage`, `LogPage`, `TrendsPage`, `MePage`), mounted as **children** of `/os` so the tab bar
+and the cabinet mount once and only the page inside them swaps.
+
+`ConsoleShell.vue` is still chrome only, but it now has two named slots beside its default one:
+`#hud` (the date flow's level counter is the fallback content; Love OS passes its own bar) and
+`#dock`, which is empty for the invite and holds the tab bar for the app. The tab bar sits
+_inside_ `.screen`, above `.screen__glass` at `z-index: 6` — below that and the scanline overlay
+eats every tap on it.
+
+**`src/lib/vitals.js` is the data layer, and it is deliberately not a Pinia store.** Flow state
+lives in `DateInvite.vue`; diary state lives in one `reactive` object in this module, mirrored
+into `localStorage` under `love-machine-vitals-v1`. Things in there that are load-bearing:
+
+- **Days are keyed by the local calendar date**, built by hand from `getFullYear/Month/Date`.
+  `toISOString()` would file an 11pm kiss under tomorrow for everyone east of UTC, which is most
+  of the people this was written for.
+- **The save is debounced by 250 ms.** A slider drag fires an input per frame, and
+  `localStorage.setItem` is a synchronous main-thread write; one write a beat after she stops is
+  the whole point.
+- **Every read is defensive and every failure degrades to "no data yet".** `localStorage` throws
+  outright in iOS private browsing, and a `schema` mismatch or unparseable blob is discarded
+  rather than migrated. An app with no memory is still a working app; an app that throws on boot
+  is not.
+- **`hasEntry()` is the difference between "nothing happened" and "nothing logged".** Untouched
+  days are absent from `days` and read as zero everywhere, so the streak needs an explicit test
+  for a day having been touched. The streak also starts its walk at yesterday when today is
+  blank — she may simply not have logged yet, and breaking the streak at midnight would be a lie.
+- `rememberDate()` is the one seam back to the invite: `onPickPlace()` in `DateInvite.vue` calls
+  it, which stores the date for the countdown, writes the opening moment, and sets `unlocked` —
+  the flag that makes the boot screen offer `♡ LOVE VITALS >` under PRESS START.
+
+**The chart colours are not the console's palette, and that is on purpose.** `--chart-crush`,
+`--chart-butterfly`, `--chart-together` and `--chart-kiss` in `app.scss` were run through a
+palette validator against the cream screen (`#fff6ea`) for lightness, chroma, colour-blind
+separation and contrast. The console's own `--mint` and `--butter` fail it badly — they are far
+too light to read as bars on cream. Reaching for them because they are "the brand colours" is the
+easy way to undo this. Two more rules hold the charts together:
+
+- **Every chart draws exactly one metric**, and each is labelled with its name and emoji, so no
+  reading depends on telling two hues apart. The adjacent-pair separation is in the acceptable-
+  with-secondary-encoding band, which is only true while that stays so.
+- `BarChart.vue` puts the value in a **hover tooltip rather than a label on every bar** — at ~300
+  px wide, seven printed numbers are a wall of digits — and a zero day draws a 2px stub on the
+  baseline so a gap reads as "nothing logged" instead of a chart that failed to draw. Trends
+  keeps a table view of the same numbers for anyone the picture does not work for.
+
 ## Styling conventions
 
-`src/css/app.scss` (~465 lines) is the whole design system: CSS custom-property tokens under
+`src/css/app.scss` (~965 lines) is the whole design system: CSS custom-property tokens under
 `:root` (`--bubblegum`, `--plum`, `--ink`, `--drop`, `--press`, the three font stacks), then the
 console shell, then shared classes (`.scene`, `.eyebrow`, `.headline`, `.subline`, `.btn`,
 `.tile`, `.drift`). Component `<style>` blocks are `scoped` and only hold layout specific to
@@ -156,13 +273,20 @@ that screen; reach for an existing token or shared class before adding a new col
 - `.warp-leave-active` is `pointer-events: none`. The outgoing screen sits over the incoming one
   at opacity 0, so without it every tap in that window lands on the level she just left — and a
   transition that never finishes (a backgrounded tab) leaves that invisible sheet there for good.
-- Fonts (Baloo 2, Courier Prime, Press Start 2P) load from Google Fonts in `index.html`, not npm.
+- Fonts (Baloo 2, Courier Prime, Press Start 2P) are **bundled, not fetched**. `src/css/_fonts.scss`
+  and the woff2 files beside it are generated by `node scripts/fetch-fonts.mjs`; `app.scss` pulls
+  them in with `@use 'fonts'` at the very top, where Sass requires it. They used to come from
+  Google Fonts in `index.html` and cannot go back: a stylesheet requested from another origin
+  during the initial parse goes out *before* the service worker controls the page, so runtime
+  caching never catches it and the first offline launch renders the whole console in Trebuchet.
+  Baloo is fetched as a weight range (`wght@500..800`), which is one variable file instead of four
+  static ones — about 100 KB of difference.
 
 ## Checking it in a browser
 
 There is no test suite, so the way to verify a flow change is to drive it. Playwright cannot
 download its own browsers in this environment, but `playwright-core` can drive the installed
-Chrome at `C:/Program Files/Google/Chrome/Application/chrome.exe`. Serve `dist/spa` over plain
+Chrome at `C:/Program Files/Google/Chrome/Application/chrome.exe`. Serve `dist/pwa` over plain
 HTTP (hash routing needs no rewrites), grant `geolocation` with a fixed `geolocation` coordinate
 in the browser context, and route `**://*.emailjs.com/**` to a fulfilled 200 so no real letter
 goes out. Buttons on the boot and win screens animate, so clicks need `force: true` — otherwise

@@ -1,0 +1,16 @@
+The font files in this folder are redistributed under the SIL Open Font
+License, Version 1.1, which permits bundling them with a website like this one.
+
+  Baloo 2         (c) Ek Type            https://fonts.google.com/specimen/Baloo+2
+  Courier Prime   (c) Quote-Unquote Apps https://fonts.google.com/specimen/Courier+Prime
+  Press Start 2P  (c) CodeMan38          https://fonts.google.com/specimen/Press+Start+2P
+
+Full licence text: https://openfontlicense.org/open-font-license-official-text/
+
+The short version of what it asks of this project: the files may be bundled and
+served, they must stay under the same licence, and they must not be sold on
+their own. Each family's own OFL.txt, with its exact copyright line and any
+reserved font name, ships in the archive on the Google Fonts page linked above.
+
+These were fetched by scripts/fetch-fonts.mjs, which is the thing to re-run
+rather than replacing the files by hand.

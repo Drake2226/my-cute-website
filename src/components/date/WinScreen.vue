@@ -25,6 +25,11 @@
 
       <p class="win__sign">See you soon 🥰</p>
 
+      <!-- Where the console stops being one question and becomes an app. The
+           countdown behind this button is harmless: navigating away unmounts
+           the screen, which clears the timer with it. -->
+      <router-link to="/os/vitals" class="btn btn--mint win__open">OPEN LOVE VITALS ></router-link>
+
       <p class="win__timer" role="status">BACK TO START IN {{ secondsLeft }}</p>
     </div>
   </div>
@@ -212,8 +217,17 @@ const confetti = computed(() =>
   color: rgba(74, 43, 61, 0.7);
 }
 
+.win__open {
+  margin-top: 14px;
+  font-family: var(--font-hud);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  padding: 13px 18px;
+  text-decoration: none;
+}
+
 .win__timer {
-  margin: 6px 0 0;
+  margin: 12px 0 0;
   font-family: var(--font-hud);
   font-size: 6.5px;
   letter-spacing: 0.16em;

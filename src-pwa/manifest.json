@@ -1,0 +1,60 @@
+{
+  "name": "LOVE-MACHINE 3000",
+  "short_name": "Love Machine",
+  "description": "A little pink console that asks one very important question, and keeps the vitals of what happened next.",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["lifestyle", "health"],
+  "orientation": "portrait",
+  "background_color": "#ffe3ef",
+  "theme_color": "#ffe3ef",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "start_url": ".",
+  "scope": ".",
+  "icons": [
+    {
+      "src": "icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-256x256.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Log today",
+      "short_name": "Log",
+      "description": "Take today's reading",
+      "url": "./#/os/log",
+      "icons": [{ "src": "icons/icon-192x192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Love Vitals",
+      "short_name": "Vitals",
+      "description": "Today's rings and the countdown",
+      "url": "./#/os/vitals",
+      "icons": [{ "src": "icons/icon-192x192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

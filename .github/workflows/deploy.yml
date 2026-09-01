@@ -40,11 +40,20 @@ jobs:
       # postinstall script runs `quasar prepare` for us.
       - run: npm ci
 
+      # The PWA half keeps its own package.json — Workbox and the service
+      # worker registrar live in /src-pwa, not in the root dependencies, and a
+      # root `npm ci` does not reach them. Without this the build fails looking
+      # for workbox-build.
+      - run: npm ci
+        working-directory: src-pwa
+
+      # `npm run build` is the PWA build: the deployed copy has to carry a
+      # service worker and a manifest or it cannot be installed.
       - run: npm run build
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/spa
+          path: dist/pwa
 
   deploy:
     needs: build

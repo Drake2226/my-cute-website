@@ -9,19 +9,29 @@
 // ---------------------------------------------------------------------------
 
 import { formatDistance, mapLink } from '@/lib/places.js'
+import { isEmailish, vitals } from '@/lib/vitals.js'
 
 // ===========================================================================
 // 1. YOUR EMAIL ADDRESS — the letter gets delivered here.
 // ===========================================================================
 
+// This is the fallback, not the last word: the setup screen after the boot
+// sequence asks for an address and keeps it in the browser, and whatever it
+// stored wins over this. Editing here still changes what that screen offers as
+// its starting suggestion, and is what a browser with nothing stored uses.
 export const RECIPIENT_EMAIL = 'zeddycarcellar@gmail.com'
+
+/** The address the letter is actually posted to on this device. */
+export function recipientEmail() {
+  return isEmailish(vitals.email) ? vitals.email.trim() : RECIPIENT_EMAIL
+}
 
 // A copy of the very same letter, blind-copied to you. Leave it as an empty
 // string to send only to her. This address never shows up in her email: it goes
 // into the template's Bcc field, not the body, so she sees a letter addressed
 // only to her. Needs one change in the EmailJS dashboard to work — see
 // "Send yourself a copy" in README.md.
-export const COPY_TO_EMAIL = 'mmveloso@wage-y.com'
+export const COPY_TO_EMAIL = 'zeddycarcellar@gmail.com'
 
 // ===========================================================================
 // 2. THE LETTER — edit these words freely, they are what she made you write.
@@ -75,7 +85,9 @@ export function isFormspreeConfigured() {
  */
 function letterParams({ dateLabel, dateIso, dateType, dateIcon, place }) {
   return {
-    to_email: RECIPIENT_EMAIL,
+    // Read at send time, not at import time, so an address changed on the Us
+    // page an hour ago is the one this letter goes to.
+    to_email: recipientEmail(),
     // Empty when you have not asked for a copy. EmailJS renders a blank Bcc as
     // no Bcc at all, so one template serves both cases.
     copy_email: COPY_TO_EMAIL,

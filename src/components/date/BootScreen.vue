@@ -28,6 +28,13 @@
         PRESS START
       </button>
       <p v-else class="boot__hint">powering up the love machine</p>
+
+      <!-- The second cartridge. Only offered once the invite has been answered
+           on this device, so a first visit is still the one question it was
+           always meant to be. -->
+      <router-link v-if="ready && unlocked" to="/os/vitals" class="boot__vitals">
+        ♡ LOVE VITALS >
+      </router-link>
     </div>
   </div>
 </template>
@@ -36,6 +43,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 defineEmits(['start'])
+
+defineProps({
+  // Has this device finished the invite before? Drives the shortcut into the
+  // vitals app under the start button.
+  unlocked: { type: Boolean, default: false },
+})
 
 // 11 x 10 pixel heart. 1 = plastic, 0 = empty.
 const BITMAP = [
@@ -165,9 +178,30 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 26px;
+  bottom: 20px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.boot__vitals {
+  font-family: var(--font-hud);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  color: var(--bubblegum);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.boot__vitals:hover {
+  background: rgba(255, 194, 221, 0.45);
+}
+
+.boot__vitals:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
 }
 
 .boot__start {

@@ -169,8 +169,45 @@ export default defineConfig((ctx) => {
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/developing-pwa/configuring-pwa
+    // The site is meant to be installed, not just visited: `npm run build`
+    // builds this mode, so the deployed copy always carries a service worker
+    // and a manifest. Everything it stores is in the browser — localStorage for
+    // the diary, the Workbox caches for the app itself — so an installed copy
+    // opens and works with no network at all.
     pwa: {
       workboxMode: 'GenerateSW', // 'GenerateSW' or 'InjectManifest'
+
+      extendPWAGenerateSWOptions(cfg) {
+        // A deploy should reach her without her having to know to hard-refresh:
+        // the new worker takes over the moment it is ready rather than waiting
+        // for every tab to be closed. Safe here because there is no long-lived
+        // in-page state a swap could strand — the diary is on disk.
+        cfg.skipWaiting = true
+        cfg.clientsClaim = true
+        cfg.cleanupOutdatedCaches = true
+
+        // The fonts are not in here on purpose. Runtime caching cannot help
+        // them: a stylesheet requested during the initial parse goes out before
+        // the service worker controls the page, so a first visit never fills
+        // that cache and the first offline launch renders in Trebuchet. They
+        // are bundled instead, which puts them in the precache with everything
+        // else — see src/css/_fonts.scss.
+        cfg.runtimeCaching = [
+          // Map tiles, kept on a short leash. This is a convenience for
+          // re-opening the map level on the same street, not an offline map:
+          // OpenStreetMap's tile policy is explicit about bulk downloading, and
+          // a big tile cache would also be the largest thing on her phone.
+          {
+            urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\//,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'map-tiles',
+              expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ]
+      },
       // swFilename: 'sw.js',
       // manifestFilename: 'manifest.json',
       // extendPWAManifestJson (json) {},

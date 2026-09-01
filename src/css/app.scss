@@ -1,7 +1,12 @@
 // ---------------------------------------------------------------------------
 // LOVE-MACHINE 3000 — a pink retro handheld console that asks one question.
-// Tokens first, then the console shell, then the shared retro UI parts.
+// Fonts first, then tokens, then the console shell, then the shared retro parts.
 // ---------------------------------------------------------------------------
+
+// The three families, served by the app itself so an installed copy still looks
+// like itself with the network off. Generated — see scripts/fetch-fonts.mjs.
+// Sass requires @use before any other rule, so this stays at the very top.
+@use 'fonts';
 
 :root {
   // Palette
@@ -12,6 +17,18 @@
   --plum: #4a2b3d; // outlines + all text (warmer than black)
   --mint: #7bd8c4; // cool accent, keeps it off monochrome
   --butter: #ffd97d; // sparks, stars, confetti
+
+  // Chart marks for Love Vitals. The console's own mint and butter are far too
+  // light to read as bars on the cream screen, so each metric gets a darker
+  // step of a neighbouring hue. These four were checked with a palette
+  // validator against #fff6ea — lightness band, chroma, colour-blind
+  // separation, contrast — not chosen by eye. Every chart draws a single
+  // metric and every card names its metric in text, so nothing here depends on
+  // telling two hues apart.
+  --chart-crush: #f06ba0; // pink — crush level
+  --chart-butterfly: #7f4fd0; // violet — butterflies
+  --chart-together: #0a8f78; // teal — time together
+  --chart-kiss: #d99a1f; // amber — kisses
 
   // Type
   --font-display: 'Baloo 2', 'Trebuchet MS', system-ui, sans-serif;
@@ -544,6 +561,357 @@ body {
 }
 
 // ---------------------------------------------------------------------------
+// Love Vitals — the app half of the console.
+//
+// The invite is one screen at a time and needs almost no furniture. The app is
+// a stack of cards you scroll, so it needs a small kit: a card, a section
+// heading, a chip, a stepper, a field. Everything here is shared by the four
+// pages; anything used by exactly one of them stays in that page's scoped
+// block.
+// ---------------------------------------------------------------------------
+
+// A page of the app: the same .scene box, but scrolling a column of cards
+// instead of centring one message.
+.os-scene {
+  gap: 14px;
+  padding: 14px 13px 18px;
+}
+
+.os-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.os-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  line-height: 1.05;
+  color: var(--plum);
+}
+
+.os-note {
+  margin: 3px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: rgba(74, 43, 61, 0.65);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.section__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-hud);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+  color: rgba(74, 43, 61, 0.6);
+}
+
+.section__more {
+  font-family: var(--font-hud);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  color: var(--bubblegum);
+  text-decoration: none;
+}
+
+.card {
+  padding: 12px;
+  border: var(--ink);
+  border-radius: 14px;
+  background: var(--cream);
+  box-shadow: 4px 4px 0 rgba(74, 43, 61, 0.22);
+  transition:
+    transform 0.12s ease,
+    background-color 0.18s ease;
+}
+
+.card--tint {
+  background: rgba(255, 227, 239, 0.75);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+// A row of small facts — streak, days together, moments — under the rings.
+.pillrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 2px solid var(--plum);
+  border-radius: 999px;
+  background: var(--cream);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--plum);
+}
+
+.pill b {
+  font-family: var(--font-hud);
+  font-size: 8px;
+}
+
+// Filter chips: the metric picker and the time range on Trends.
+.chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  padding: 6px 10px;
+  border: 2px solid var(--plum);
+  border-radius: 999px;
+  background: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.66rem;
+  color: var(--plum);
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    transform 0.12s ease;
+}
+
+.chip:hover {
+  background: var(--blush);
+}
+
+.chip:active {
+  transform: translateY(2px);
+}
+
+.chip:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.chip--on {
+  background: var(--bubblegum);
+  color: var(--cream);
+  box-shadow: 0 3px 0 var(--plum);
+}
+
+// − / + around a number, used once per metric on the Log page.
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.stepper__btn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 2px solid var(--plum);
+  border-radius: 9px;
+  background: var(--cream);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--plum);
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(74, 43, 61, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.stepper__btn:hover {
+  background: var(--cotton);
+}
+
+.stepper__btn:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+.stepper__btn:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.stepper__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stepper__read {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: var(--plum);
+}
+
+.stepper__read small {
+  margin-left: 2px;
+  font-size: 0.7rem;
+  color: rgba(74, 43, 61, 0.6);
+}
+
+// The console has no native control that looks like it belongs, so the range
+// input is rebuilt from its pseudo-elements. Both vendor prefixes are needed:
+// they cannot be combined in one rule — a browser drops the whole selector when
+// it does not recognise one half of it.
+.slider {
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.slider:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 10px;
+  border: 2px solid var(--plum);
+  border-radius: 999px;
+  background: var(--blush);
+}
+
+.slider::-moz-range-track {
+  height: 10px;
+  border: 2px solid var(--plum);
+  border-radius: 999px;
+  background: var(--blush);
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid var(--plum);
+  border-radius: 50%;
+  background: var(--bubblegum);
+  box-shadow: 0 2px 0 rgba(74, 43, 61, 0.35);
+}
+
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--plum);
+  border-radius: 50%;
+  background: var(--bubblegum);
+  box-shadow: 0 2px 0 rgba(74, 43, 61, 0.35);
+}
+
+.field {
+  width: 100%;
+  padding: 9px 10px;
+  border: 2px solid var(--plum);
+  border-radius: 10px;
+  background: var(--cream);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--plum);
+}
+
+.field:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 1px;
+}
+
+.field::placeholder {
+  color: rgba(74, 43, 61, 0.4);
+}
+
+// Small button for the app's inline actions — save, delete, erase. .btn is
+// built for one big choice on a screen and is far too loud in a card.
+.minibtn {
+  padding: 7px 12px;
+  border: 2px solid var(--plum);
+  border-radius: 999px;
+  background: var(--cream);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--plum);
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(74, 43, 61, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.minibtn:hover {
+  background: var(--cotton);
+}
+
+.minibtn:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+.minibtn:focus-visible {
+  outline: 3px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.minibtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.minibtn--go {
+  background: var(--bubblegum);
+  color: var(--cream);
+}
+
+.minibtn--quiet {
+  background: transparent;
+  border-color: rgba(74, 43, 61, 0.4);
+  box-shadow: none;
+  color: rgba(74, 43, 61, 0.7);
+}
+
+// What every list says before she has put anything in it.
+.emptynote a {
+  // A router-link in here would otherwise arrive in the browser's default blue,
+  // which is the one colour nothing else in the console uses.
+  color: var(--bubblegum);
+  font-weight: 700;
+}
+
+.emptynote {
+  margin: 0;
+  padding: 14px 12px;
+  border: 2px dashed rgba(74, 43, 61, 0.35);
+  border-radius: 12px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(74, 43, 61, 0.6);
+}
+
+// ---------------------------------------------------------------------------
 // Quiet everything decorative down for people who ask for less motion.
 // ---------------------------------------------------------------------------
 
@@ -576,6 +944,19 @@ body {
 
   .mappin {
     transition: none;
+  }
+
+  .card,
+  .chip,
+  .stepper__btn,
+  .minibtn {
+    transition: none;
+  }
+
+  .chip:active,
+  .stepper__btn:active,
+  .minibtn:active {
+    transform: none;
   }
 }
 
