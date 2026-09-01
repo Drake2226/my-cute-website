@@ -1,11 +1,11 @@
 <template>
-  <ConsoleShell :level="level" :level-label="levelLabel">
-    <Transition name="warp">
+  <ConsoleShell :level="level" :level-label="levelLabel" :can-go-back="canGoBack" @back="onBack">
+    <Transition :name="transition">
       <BootScreen v-if="step === 'boot'" :unlocked="vitals.unlocked" @start="onStart" />
 
       <MailScreen v-else-if="step === 'mail'" :suggested="suggestedEmail" @done="onSetEmail" />
 
-      <AskScreen v-else-if="step === 'ask'" @yes="step = 'day'" />
+      <AskScreen v-else-if="step === 'ask'" @yes="goTo('day')" />
 
       <DayScreen v-else-if="step === 'day'" @pick="onPickDay" />
 
@@ -89,29 +89,68 @@ const suggestedEmail = computed(() => vitals.email || RECIPIENT_EMAIL)
 const level = computed(() => LEVELS[step.value].n)
 const levelLabel = computed(() => LEVELS[step.value].label)
 
+// Where she has been, most recent last. A stack rather than a fixed map of
+// "previous level", because the setup screen only appears on the visit that
+// asks for an address — with a map, backing out of the question would either
+// land on a screen she never saw or refuse to go anywhere at all.
+const trail = ref([])
+
+// Every level can be reviewed and answered again, except the last one: the
+// letter is sent by the time the win screen appears, and a way back to the map
+// would be a way to send a second one.
+const canGoBack = computed(() => trail.value.length > 0 && step.value !== 'win')
+
+// Screens slide in from the right going forward and from the left coming back,
+// so the direction of travel is never in doubt.
+const transition = ref('warp')
+
+function goTo(next) {
+  trail.value.push(step.value)
+  transition.value = 'warp'
+  step.value = next
+}
+
+function onBack() {
+  const previous = trail.value.pop()
+  if (!previous) return
+  transition.value = 'warp-back'
+  step.value = previous
+}
+
+// Any move that is not the back button is a move forward.
+watch(step, () => {
+  if (transition.value === 'warp-back') {
+    // Let the leaving screen finish before the direction flips back, or a
+    // forward tap during the animation would reverse it mid-slide.
+    setTimeout(() => {
+      transition.value = 'warp'
+    }, 360)
+  }
+})
+
 // The setup screen only stands between PRESS START and the question while
 // there is no address to post the letter to. Once one is saved it never appears
 // again — it is editable on the Us page from then on.
 function onStart() {
-  step.value = hasEmail.value ? 'ask' : 'mail'
+  goTo(hasEmail.value ? 'ask' : 'mail')
 }
 
 function onSetEmail({ email }) {
   setEmail(email)
-  step.value = 'ask'
+  goTo('ask')
 }
 
 function onPickDay({ dateIso, dateLabel }) {
   answer.dateIso = dateIso
   answer.dateLabel = dateLabel
-  step.value = 'vibe'
+  goTo('vibe')
 }
 
 function onPickVibe({ dateType, icon, category }) {
   answer.dateType = dateType
   answer.icon = icon
   answer.category = category
-  step.value = 'place'
+  goTo('place')
 }
 
 // The map level sends the letter — it is the last thing she picks — so by the
@@ -122,13 +161,15 @@ function onPickPlace({ place }) {
   // the countdown on its summary page is the date she just picked, and the
   // console has nothing to count down to before this point.
   rememberDate({ ...answer, place })
-  step.value = 'win'
+  goTo('win')
 }
 
 // The last level runs itself out after half a minute and hands the console back
 // to the boot screen, cleared of the previous answer.
 function onRestart() {
   Object.assign(answer, { ...BLANK })
+  trail.value = []
+  transition.value = 'warp'
   step.value = 'boot'
 }
 
@@ -146,6 +187,14 @@ onMounted(() => {
   const saved = resumableFlow()
   if (saved && RESUMABLE.has(saved.step)) {
     Object.assign(answer, { ...BLANK, ...saved.answer })
+    // Rebuild the trail from the order of the levels, or resuming would arrive
+    // on level four with no way back — she did walk those screens, just in a
+    // session that has since been closed. The setup screen is only in the trail
+    // if it would have been shown.
+    const ORDER = ['boot', 'mail', 'ask', 'day', 'vibe', 'place']
+    trail.value = ORDER.slice(0, ORDER.indexOf(saved.step)).filter(
+      (level) => level !== 'mail' || !hasEmail.value,
+    )
     step.value = saved.step
   }
 })

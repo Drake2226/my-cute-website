@@ -739,6 +739,29 @@ async function lockItIn() {
   cursor: default;
 }
 
+/* On a short phone the heading, the hint and the picked-spot box left the map
+   about 200px tall, which is a cramped thing to hunt for a pin in. The words
+   above it are the least useful pixels on the level once she is looking at a
+   map, so they give way first. */
+@media (max-height: 720px) {
+  .place {
+    gap: 7px;
+  }
+
+  .place__head .eyebrow {
+    display: none;
+  }
+
+  .place__headline {
+    font-size: 1.15rem;
+  }
+
+  .place__hint {
+    margin-top: 3px;
+    font-size: 0.66rem;
+  }
+}
+
 .place__stage {
   position: relative;
   flex: 1;

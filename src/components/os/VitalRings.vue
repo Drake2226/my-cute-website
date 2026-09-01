@@ -129,9 +129,10 @@ const summary = computed(() =>
 .rings__name {
   font-weight: 700;
   color: var(--plum);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrapping, not truncating. On a 360px phone the ellipsis was eating the
+     labels down to "Crush Lev…" and "Time Toge…", which is the one thing this
+     legend exists to say. */
+  line-height: 1.2;
 }
 
 .rings__value {
@@ -139,10 +140,24 @@ const summary = computed(() =>
   font-family: var(--font-hud);
   font-size: 9px;
   color: rgba(74, 43, 61, 0.85);
+  /* "70bpm / 120" is one reading and must not break across two lines. */
+  white-space: nowrap;
 }
 
 .rings__goal {
   opacity: 0.5;
+}
+
+/* Narrow phones need the pixels for the words more than for the rings. */
+@media (max-width: 380px) {
+  .rings {
+    gap: 10px;
+  }
+
+  .rings__svg {
+    width: 104px;
+    height: 104px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
