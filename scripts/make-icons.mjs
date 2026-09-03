@@ -3,7 +3,7 @@
 //
 //   node scripts/make-icons.mjs [path-to-master.png]
 //
-// The master is the Meet Cute badge (square, transparent around it). Chrome
+// The master is the Meet Dawn badge (square, transparent around it). Chrome
 // does the resampling, because it is already here to drive the app and the
 // alternative is a native image dependency for five downscales.
 //

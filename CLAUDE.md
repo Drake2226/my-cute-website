@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Meet Cute** is the product; **LOVE-MACHINE 3000** is the machine. The brand name is what the
+**Meet Dawn** is the product; **LOVE-MACHINE 3000** is the machine. The brand name is what the
 outside world sees — the home-screen label, the manifest, the browser tab, the icon — and the
 model name stays engraved on the plastic plate at the top of the cabinet, the way real hardware
 carries both. Renaming one is not renaming the other.
@@ -288,7 +288,7 @@ and manifest under `src-pwa/`, and that folder carries **its own `package.json`*
 a root dependency, so a plain `npm ci` does not install it and the PWA build fails looking for
 `workbox-build`. The deploy workflow runs `npm ci` twice for that reason.
 
-- `src-pwa/manifest.json` is the app's identity: the name **Meet Cute**, `standalone` display,
+- `src-pwa/manifest.json` is the app's identity: the name **Meet Dawn**, `standalone` display,
   the pink `#ffe3ef` theme, and two shortcuts into `#/os/log` and `#/os/vitals`.
 - **The icons come in three kinds, and the difference is load-bearing.** `scripts/make-icons.mjs`
   builds them all from `public/icons/icon-512x512.png` (the supplied badge artwork) using the

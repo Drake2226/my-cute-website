@@ -44,7 +44,7 @@ const today = new Date()
   .toUpperCase()
 
 onMounted(() => {
-  document.title = 'Meet Cute · Vitals 💗'
+  document.title = 'Meet Dawn · Vitals 💗'
   // Reaching the app at all counts as unlocking it: she may have opened the
   // link straight to /#/os on a second visit, and sending her back to the boot
   // screen to earn the tab bar again would be a puzzle, not a feature.

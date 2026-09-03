@@ -3,12 +3,12 @@
        half-drawn console in fallback fonts is what this is for: the CSS lands
        before the fonts do, so without it the first thing she sees is the right
        layout in the wrong typeface, snapping into place a beat later. -->
-  <div class="splash" role="status" aria-label="Opening Meet Cute">
+  <div class="splash" role="status" aria-label="Opening Meet Dawn">
     <div class="splash__badge">
       <img :src="badge" alt="" width="104" height="104" />
     </div>
 
-    <p class="splash__name">MEET CUTE</p>
+    <p class="splash__name">MEET DAWN</p>
 
     <div class="splash__bar" aria-hidden="true">
       <div class="splash__fill" />
