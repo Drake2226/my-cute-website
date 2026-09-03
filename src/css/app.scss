@@ -78,9 +78,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 14px;
+  // `viewport-fit=cover` lets the page reach the physical edges of a phone, so
+  // the padding has to clear the notch and the home indicator itself. The
+  // max() keeps the ordinary 20/14 everywhere that has no such hardware.
+  padding: max(20px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
 }
-
 .console {
   position: relative;
   width: min(460px, 100%);
@@ -143,6 +146,67 @@ body {
   height: 5px;
   border-radius: 50%;
   background: rgba(74, 43, 61, 0.35);
+}
+
+// ---------------------------------------------------------------------------
+// Installed, in a window of its own
+//
+// The cabinet is furniture for a web page. It gives the console somewhere to
+// sit when it is one thing on a tab among many, and the plastic, the screws and
+// the engraved plate are what make it read as a device rather than a card. An
+// installed app is not one thing among many: it already owns the screen, and
+// drawing a case around a display that *is* the device reads as a website
+// pretending to be one. So in app mode the case comes off and the glass fills
+// the window, while a browser tab keeps every screw.
+//
+// `.app-window` is set on <html> by src/lib/install.js rather than written here
+// as a media query, because iOS reports this through `navigator.standalone`
+// instead of through `display-mode` and one class keeps the rules single.
+// ---------------------------------------------------------------------------
+
+.app-window {
+  .cabinet {
+    // Stretch rather than centre: the console is about to become the window.
+    align-items: stretch;
+    // All that is left of the padding is whatever the hardware demands — the
+    // notch, the home indicator, the rounded corners of the phone itself.
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
+
+  .console {
+    // Still capped at 460px: on a phone that is the whole width, and on a
+    // desktop app window a screen stretched to 1200px would be a column of
+    // cream nothing. What goes is the case, not the measure.
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  // The screws, the model plate and the speaker grille are all parts of the
+  // case. The plate is the one that stings — it is where the machine's name is
+  // engraved — but a name plate floating above a full-bleed screen is a caption
+  // on nothing.
+  .console__screw,
+  .console__plate,
+  .console__deck {
+    display: none;
+  }
+
+  .screen {
+    // Fill the window instead of the 600px the cabinet allowed it, and drop the
+    // floor: the scenes scroll on their own, so a short window should shrink the
+    // glass rather than push it off the bottom.
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+  }
 }
 
 // ---------------------------------------------------------------------------

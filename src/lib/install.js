@@ -22,14 +22,40 @@ export const isInstalled = ref(false)
 // Home Screen, so those pages get instructions instead of a button.
 export const isIos = ref(false)
 
+// The three display modes that mean "this app has a window of its own". Chrome
+// and Android report the one the manifest asked for, so `minimal-ui` and
+// `fullscreen` have to be here beside `standalone` — the manifest lists
+// minimal-ui as a fallback, and a launcher is free to hand back either.
+const OWN_WINDOW =
+  '(display-mode: standalone), (display-mode: minimal-ui), (display-mode: fullscreen)'
+
+// The class the stylesheet hangs the frameless layout off. It is set from here
+// rather than written as a media query in the CSS because iOS reports this
+// through `navigator.standalone` rather than through `display-mode`, and one
+// class means the rules are written once instead of twice.
+const APP_WINDOW_CLASS = 'app-window'
+
 if (typeof window !== 'undefined') {
+  const query = window.matchMedia?.(OWN_WINDOW)
+
   const standalone = () =>
-    window.matchMedia?.('(display-mode: standalone)').matches === true ||
+    query?.matches === true ||
     // The iOS spelling, and the only way to tell there.
     window.navigator.standalone === true
 
-  isInstalled.value = standalone()
+  // Applied at import time, not on mount: App.vue imports this module before it
+  // renders, so the cabinet is never painted on and then taken away again.
+  const apply = () => {
+    isInstalled.value = standalone()
+    document.documentElement.classList.toggle(APP_WINDOW_CLASS, isInstalled.value)
+  }
+
+  apply()
   isIos.value = /iphone|ipad|ipod/i.test(window.navigator.userAgent)
+
+  // A window can change its mind — a desktop app window can be pushed into
+  // fullscreen, and Chrome moves an installed tab back and forth.
+  query?.addEventListener?.('change', apply)
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault()

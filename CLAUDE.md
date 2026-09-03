@@ -40,7 +40,7 @@ so ESLint errors surface in the dev build output.
 **The app is the front door; the invite is a room off it.** `/` redirects to `/os`, the invite
 lives at `/invite`, and everything else is a 404. Opening the app opens the diary — most visits
 are to that, and the question only gets asked now and then. The invite is reached from the 💌 in
-the app header, from *Plan another one* on the Us tab, and from the summary card that appears
+the app header, from _Plan another one_ on the Us tab, and from the summary card that appears
 when no date is planned. That last one matters: without it nothing on the page she opens onto
 points at the thing the machine was built for.
 
@@ -84,7 +84,7 @@ the `LEVELS` map, like `boot`: numbering it would make the counter read "1/6" on
 that shows it and "1/5" on every visit afterwards, because `onStart()` skips straight to `ask`
 once `hasEmail` is true. It is never shown twice — the Us page is where it is changed after that.
 
-`RECIPIENT_EMAIL` in `src/config.js` is now the *fallback and the suggestion*, not the
+`RECIPIENT_EMAIL` in `src/config.js` is now the _fallback and the suggestion_, not the
 destination: `recipientEmail()` prefers `vitals.email` and `letterParams()` calls it at send
 time, so an address edited on the Us page an hour ago is the one the next letter goes to.
 `isEmailish()` is deliberately loose — the only real test of an address is whether mail arrives,
@@ -133,13 +133,13 @@ Three rules hold that together, and undoing any of them does real damage:
   servers, and had the level telling a city of 250,000 that it had no cinemas. A server that is
   down announces itself; one that confidently answers "nothing" does not.
   `node scripts/check-overpass.mjs` is the gate — it asks each candidate for cafés in Manila
-  *and* Zurich, and a real instance finds plenty of both.
+  _and_ Zurich, and a real instance finds plenty of both.
 - **An empty answer needs corroboration.** `askTheServers` no longer returns on the first server
   to say zero: it keeps asking while anyone is left who might disagree, and only reports nothing
   when everyone who answered agrees. That is what makes the failure above impossible rather than
   merely documented, and it costs an extra request only on searches that genuinely find nothing.
 - **A stalled server gets overtaken, not waited out.** `askTheServers` starts one endpoint, and
-  if nothing has come back in `HEDGE_MS` (3.5s) it asks the next one *alongside* it rather than
+  if nothing has come back in `HEDGE_MS` (3.5s) it asks the next one _alongside_ it rather than
   after it — first answer wins, the rest are cancelled. Strict one-at-a-time cost the full request
   timeout whenever the front of the list was merely slow: twelve seconds of nothing on a level
   whose veil lifts at nine. Measured with a stubbed server hanging for 11s and a healthy mirror
@@ -222,11 +222,11 @@ Two details there are load-bearing and easy to undo by accident:
   like a broken app on a level that is working exactly as designed, which is how the noise gets
   mistaken for the bug.
 - **Narrow on the way out, not in the query, when the narrowing key is a common one.** The
-  churches category used to ask for `amenity=place_of_worship + religion=christian` *and*
+  churches category used to ask for `amenity=place_of_worship + religion=christian` _and_
   `building~(church|cathedral|chapel)`, because plenty of churches carry no religion tag. Matching
   on `building` means scanning every building in the circle: measured over 25 km around Tacloban
   that query **never finished**, at either 60s or 90s. Asking for every `amenity=place_of_worship`
-  instead takes 2.1s and finds *more* (105 named against 81), and the `keep` predicate on the
+  instead takes 2.1s and finds _more_ (105 named against 81), and the `keep` predicate on the
   category then drops anything explicitly tagged as another religion — free, on data already in
   hand. `[building=hotel]` went the same way: 3.5s against 1.9s for one extra hotel in 142.
   If a selector exists to catch things a cheaper one misses, check whether the cheaper one can
@@ -292,13 +292,28 @@ a root dependency, so a plain `npm ci` does not install it and the PWA build fai
   the pink `#ffe3ef` theme, and two shortcuts into `#/os/log` and `#/os/vitals`.
 - **The icons come in three kinds, and the difference is load-bearing.** `scripts/make-icons.mjs`
   builds them all from `public/icons/icon-512x512.png` (the supplied badge artwork) using the
-  same headless Chrome that drives the app. *Plain* keeps the artwork's transparent margins, for
-  tabs and the manifest's default icons. *Maskable* is a separate drawing — badge shrunk into the
-  middle 66% of a solid `#ff5fa2` square — because Android clips an adaptive icon to its own
+  same headless Chrome that drives the app. _Plain_ keeps the artwork's transparent margins, for
+  tabs and the manifest's default icons. _Maskable_ is a separate drawing — badge shrunk into the
+  middle 66% of a solid `#c62b64` square — because Android clips an adaptive icon to its own
   shape and anything relying on transparent corners loses its edges; declaring the plain icons
   `any maskable`, which an earlier version did, is exactly the mistake that crops the badge.
-  *Apple* is opaque for the same reason in reverse: iOS composites a transparent touch icon onto
+  _Apple_ is opaque for the same reason in reverse: iOS composites a transparent touch icon onto
   black, which puts black corners around a pink badge.
+- **The master must carry its own transparency.** The badge artwork arrives on a solid black
+  square — that is how the image generators hand it over, and how `favicon.io` hands back a set
+  built from it. Dropped in as-is it makes every plain icon a black tile on the tab strip, and
+  puts a black square inside the pink of every maskable and Apple one. So the badge is cut out of
+  the full-resolution original against a rounded-rect clip fitted to its own edge, and _that_ is
+  what becomes the 512px master. A supplied favicon set is a hint about the artwork, not the
+  artwork itself.
+- **The mask background is the badge's pink, not the console's.** `PINK` in the icon script is
+  sampled from the artwork; `--bubblegum` is the app's own. They have never been the same colour
+  since the badge was redrawn, and reaching for the palette token because it is "the brand pink"
+  puts a ring of a visibly different pink around the badge on every Android home screen.
+- `public/favicon.ico` comes out of the same script. An `.ico` is only a container, so it holds
+  three plain PNG renders (16, 32, 48) behind a sixteen-byte directory entry each — which keeps
+  the legacy icon transparent like the PNG links beside it, rather than shipping whatever
+  background the generator baked in.
 - Safari pinned tabs take a one-colour **mask**, not a picture, so the badge cannot serve there —
   `safari-pinned-tab.svg` is a plain heart. Quasar injects its own `mask-icon` link coloured with
   the manifest theme, a pale blush that vanishes on the tab strip, so `index.html` writes one
@@ -316,6 +331,20 @@ a root dependency, so a plain `npm ci` does not install it and the PWA build fai
   Quasar injects. The only tag written by hand there is `apple-mobile-web-app-title`, because
   Quasar's injected one is the manifest `name` and iOS truncates a home-screen label at about
   twelve characters.
+- **Installed, the cabinet comes off.** The plastic case, the screws and the model plate are
+  furniture for a web page: they make the console read as a device when it is one thing on a tab
+  among many. An installed app already owns the screen, so `.app-window` on `<html>` flattens the
+  case and lets the glass fill the window, safe-area insets and all, while a browser tab keeps
+  every screw. The class is set by `install.js` rather than written as a `@media (display-mode:
+standalone)` block because **iOS reports this through `navigator.standalone`, not through
+  `display-mode`** — one class means the rules are written once rather than twice, and it is set
+  at import time so the cabinet is never painted and then taken away. `minimal-ui` and
+  `fullscreen` count too: the manifest lists minimal-ui as a fallback and a launcher may hand
+  back either.
+- The viewport meta carries `viewport-fit=cover` for every mode now, not just Cordova, or the
+  `env(safe-area-inset-*)` values a frameless layout needs all resolve to zero. `.cabinet` pads
+  itself with `max(20px, env(...))` so an ordinary tab is unchanged and a notched phone is
+  cleared in both modes.
 - `src/lib/install.js` registers the `beforeinstallprompt` listener **at import time**, and
   `App.vue` imports it for that side effect alone. The event fires once, early, and unprompted:
   anything that starts listening when a page mounts has already missed it. It is parked in a ref
@@ -412,7 +441,7 @@ that screen; reach for an existing token or shared class before adding a new col
 - **Every screen tells you when it scrolls, and `ConsoleShell` is what says so.** `.scene` gets
   `.scene--more` / `.scene--above` from the real scroll position, and `app.scss` turns those into
   a `mask-image` that fades the content at whichever edge has something behind it. It has to be a
-  mask: a background gradient paints *behind* the children, and these screens are wall-to-wall
+  mask: a background gradient paints _behind_ the children, and these screens are wall-to-wall
   opaque cards, so the fade landed underneath them and was never seen. The classes are set from
   the shell rather than from each of the eleven screens — `scroll` does not bubble but it does
   capture, so one listener on `.screen` hears whichever scene is mounted, with a `ResizeObserver`
@@ -438,7 +467,7 @@ that screen; reach for an existing token or shared class before adding a new col
   and the woff2 files beside it are generated by `node scripts/fetch-fonts.mjs`; `app.scss` pulls
   them in with `@use 'fonts'` at the very top, where Sass requires it. They used to come from
   Google Fonts in `index.html` and cannot go back: a stylesheet requested from another origin
-  during the initial parse goes out *before* the service worker controls the page, so runtime
+  during the initial parse goes out _before_ the service worker controls the page, so runtime
   caching never catches it and the first offline launch renders the whole console in Trebuchet.
   Baloo is fetched as a weight range (`wght@500..800`), which is one variable file instead of four
   static ones — about 100 KB of difference.
