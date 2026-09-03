@@ -31,14 +31,17 @@ const OUT = join(ROOT, 'public/icons')
 
 const MASTER = resolve(process.argv[2] || join(OUT, 'icon-512x512.png'))
 
-// The badge's own upper pink, which is also the app's --bubblegum. Sampled from
-// the artwork rather than guessed, so the mask background does not read as a
-// ring of a slightly different pink around the badge.
-const PINK = '#ff5fa2'
+// The badge's own body pink, sampled from the artwork rather than guessed, so
+// the mask background does not read as a ring of a slightly different pink
+// around the badge. It is deliberately not the app's --bubblegum: the console
+// palette and the badge artwork are two different pinks, and the one that has
+// to match here is the one the badge is actually painted in.
+const PINK = '#c62b64'
 
 const JOBS = [
   // [file, size, kind]
   ['icon-128x128.png', 128, 'plain'],
+  ['icon-192x192.png', 192, 'plain'],
   ['icon-256x256.png', 256, 'plain'],
   ['icon-384x384.png', 384, 'plain'],
   ['icon-maskable-192x192.png', 192, 'maskable'],
@@ -50,6 +53,10 @@ const JOBS = [
   ['ms-icon-144x144.png', 144, 'apple'],
   ['favicon-96x96.png', 96, 'plain'],
   ['favicon-128x128.png', 128, 'plain'],
+  // index.html asks for these two by name, so they are built here rather than
+  // left over from whatever tool made the first set.
+  ['favicon-32x32.png', 32, 'plain'],
+  ['favicon-16x16.png', 16, 'plain'],
 ]
 
 const master = (await readFile(MASTER)).toString('base64')
@@ -82,6 +89,40 @@ for (const [name, size, kind] of JOBS) {
   await page.close()
   console.log(`${name.padEnd(28)} ${String(size).padStart(3)}px  ${kind}`)
 }
+
+// public/favicon.ico, which index.html still points at and which old browsers
+// reach for before they read the PNG links. An .ico is only a container: three
+// plain renders and a sixteen-byte directory entry each. They keep transparent
+// corners for the same reason the tab icons do — a favicon is drawn straight
+// onto the browser's own chrome.
+const ICO_SIZES = [16, 32, 48]
+const icoParts = []
+
+for (const size of ICO_SIZES) {
+  const page = await browser.newPage({ viewport: { width: size, height: size } })
+  await page.setContent(html(size, 'plain'))
+  icoParts.push(await page.screenshot({ omitBackground: true }))
+  await page.close()
+}
+
+const dir = Buffer.alloc(6 + 16 * ICO_SIZES.length)
+dir.writeUInt16LE(1, 2) // 1 = icon, as opposed to a cursor
+dir.writeUInt16LE(ICO_SIZES.length, 4)
+
+let at = dir.length
+ICO_SIZES.forEach((size, i) => {
+  const entry = 6 + 16 * i
+  dir.writeUInt8(size, entry) // a 256px entry would be written as 0; none here is
+  dir.writeUInt8(size, entry + 1)
+  dir.writeUInt16LE(1, entry + 4) // colour planes
+  dir.writeUInt16LE(32, entry + 6) // bits per pixel
+  dir.writeUInt32LE(icoParts[i].length, entry + 8)
+  dir.writeUInt32LE(at, entry + 12)
+  at += icoParts[i].length
+})
+
+await writeFile(join(ROOT, 'public/favicon.ico'), Buffer.concat([dir, ...icoParts]))
+console.log(`favicon.ico                    ${ICO_SIZES.join('/')}px  plain`)
 
 await browser.close()
 

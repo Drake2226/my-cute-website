@@ -61,7 +61,9 @@ const badge = `${import.meta.env.BASE_URL}icons/icon-192x192.png`
 
 .splash__badge img {
   display: block;
-  border-radius: 20px;
+  /* No border-radius here: the badge artwork carries its own rounded corners
+     in its transparency, and a CSS radius that does not match them exactly
+     shaves the corners off instead of following them. */
 }
 
 .splash__name {
