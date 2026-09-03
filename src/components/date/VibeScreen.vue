@@ -33,13 +33,14 @@ const OPTIONS = [
   { icon: '🎬', label: 'Movie Night', spot: 'cinema' },
   { icon: '🍝', label: 'Dinner Date', spot: 'restaurant' },
   { icon: '☕', label: 'Coffee & Chill', spot: 'cafe' },
+  { icon: '💻', label: 'Work Date', spot: 'study' },
   { icon: '🌅', label: 'Sunset Picnic', spot: '' },
   { icon: '🎢', label: 'Amusement Park', spot: 'themepark' },
   { icon: '🛍️', label: 'Mall Day', spot: 'mall' },
   { icon: '🎨', label: 'Paint & Sip', spot: 'art' },
   { icon: '🥾', label: 'Nature Walk', spot: '' },
   { icon: '⛪', label: 'Church Date', spot: 'worship' },
-  { icon: '🏨', label: 'Hotel Getaway', spot: 'hotel' },
+  { icon: '🏨', label: 'Quality Time', spot: 'hotel' },
   { icon: '🚗', label: 'Road Trip', spot: '' },
   { icon: '🏠', label: 'Cozy Night In', spot: 'snacks' },
 ]
@@ -81,10 +82,17 @@ function choose(option) {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  /* Six rows of tiles have to clear the screen without it scrolling, so the
+  /* Seven rows of tiles have to clear the screen without it scrolling, so the
      rows are shorter than the tiles want to be and stretch into what is left. */
   grid-auto-rows: minmax(56px, 1fr);
-  gap: 7px;
+  gap: 5px;
+}
+
+/* Thirteen tiles is an odd number, so the last one would sit alone in a
+   half-empty row. It takes the whole row instead — a deliberate-looking end to
+   the grid rather than a gap that reads as a missing option. */
+.vibe__grid .tile:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .tile {
@@ -94,7 +102,7 @@ function choose(option) {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 10px 6px;
+  padding: 6px;
   border: var(--ink);
   border-radius: 14px;
   background: var(--cream);

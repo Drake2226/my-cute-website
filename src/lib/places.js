@@ -51,6 +51,32 @@ export const CATEGORIES = {
     geo: ['catering.cafe'],
     selectors: ['["amenity"~"^(cafe|coffee_shop)$"]', '["shop"="bubble_tea"]'],
   },
+  study: {
+    // "Somewhere we can both open a laptop." The study hubs proper — libraries,
+    // co-working desks, internet cafés — are thin on the ground outside the big
+    // cities, and on their own this category would answer "nothing nearby" in
+    // most towns. So the cafés that get used as study hubs ride along in the
+    // same regex, which is free: values of one key grouped into one selector
+    // are a single scan of the circle, not four. That overlaps Coffee & Chill
+    // on purpose — the same café is both, and which one she meant is the tile
+    // she tapped, not the pin.
+    plural: 'study spots',
+    radiusM: 25000,
+    max: 60,
+    // `office=coworking` is the current tag; `amenity=coworking_space` is
+    // deprecated but still all over the map, so both are asked for. This one
+    // is the second scan and earns it — co-working desks are the places most
+    // squarely meant by "work date", and nothing else here would find them.
+    //
+    // Measured over 25 km around Tacloban: 6.4s, 77 named places — 9 libraries,
+    // 7 internet cafés, 1 co-working desk and 60 cafés carrying the rest. Well
+    // inside WIDE_TIMEOUT_MS, and nowhere near OVERPASS_OUT_CAP.
+    geo: ['education.library', 'office.coworking', 'catering.cafe'],
+    selectors: [
+      '["amenity"~"^(library|coworking_space|internet_cafe|cafe)$"]',
+      '["office"="coworking"]',
+    ],
+  },
   themepark: {
     plural: 'amusement parks',
     // The rarest category by far — outside the big cities the nearest one is
